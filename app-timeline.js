@@ -1,6 +1,9 @@
 /**
- * ⭐ Starlit Puppet Editor v1.3.0
+ * ⭐ Starlit Puppet Editor v1.12.0
  * タイムライン・キーフレーム機能（After Effectsスタイル）
+ * - 音声レイヤー対応追加
+ * - 書き出し範囲マーカー対応
+ * - タイムラインズーム機能
  */
 
 // ===== タイムライングローバル変数 =====
@@ -14,6 +17,44 @@ let isSeekbarDragging = false; // シークバードラッグ中フラグ
 let seekbarRenderScheduled = false; // シークバー描画スケジュール済みフラグ
 let pendingSeekbarTime = 0; // 保留中のシークバー時間
 
+// ===== タイムラインズーム =====
+let timelinePixelsPerFrame = 20; // 1フレームあたりのピクセル数（デフォルト20px）
+const TIMELINE_ZOOM_DEFAULT = 20;
+const TIMELINE_ZOOM_MIN = 5;
+const TIMELINE_ZOOM_MAX = 60;
+
+// ズームレベルを設定
+function setTimelineZoom(pixelsPerFrame) {
+    timelinePixelsPerFrame = Math.max(TIMELINE_ZOOM_MIN, Math.min(TIMELINE_ZOOM_MAX, pixelsPerFrame));
+    
+    // スライダーを同期
+    const slider = document.getElementById('timeline-zoom-slider');
+    if (slider && parseInt(slider.value) !== timelinePixelsPerFrame) {
+        slider.value = timelinePixelsPerFrame;
+    }
+    
+    // パーセント表示を更新
+    const zoomValue = document.getElementById('zoom-value');
+    if (zoomValue) {
+        const percent = Math.round((timelinePixelsPerFrame / TIMELINE_ZOOM_DEFAULT) * 100);
+        zoomValue.textContent = percent + '%';
+    }
+    
+    // タイムラインを再描画
+    updateTimeline();
+}
+
+// ズームイン/アウト（ボタン用）
+function zoomTimeline(direction) {
+    const step = 5;
+    setTimelineZoom(timelinePixelsPerFrame + (direction * step));
+}
+
+// ズームをリセット
+function resetTimelineZoom() {
+    setTimelineZoom(TIMELINE_ZOOM_DEFAULT);
+}
+
 // ===== タイムライン初期化 =====
 function initTimeline() {
     const timelineContent = document.getElementById('timeline-content');
@@ -24,26 +65,7 @@ function initTimeline() {
     seekbarImage.src = 'seekbar-bear.png';
     
     // タイムライングリッドを作成
-    const grid = document.createElement('div');
-    grid.className = 'timeline-grid';
-    grid.id = 'timeline-grid';
-    
-    // 150フレーム分のグリッドを作成
-    for (let i = 0; i <= 150; i++) {
-        const marker = document.createElement('div');
-        marker.className = i % 10 === 0 ? 'frame-marker major' : 'frame-marker';
-        
-        if (i % 10 === 0) {
-            const number = document.createElement('span');
-            number.className = 'frame-number';
-            number.textContent = i;
-            marker.appendChild(number);
-        }
-        
-        grid.appendChild(marker);
-    }
-    
-    timelineContent.appendChild(grid);
+    createTimelineGrid();
     
     // タイムラインマウスダウンイベント（シークバードラッグ用）
     timelineContent.addEventListener('mousedown', handleTimelineMouseDown);
@@ -74,11 +96,52 @@ function initTimeline() {
     updateTimeline();
 }
 
+// ===== タイムライングリッド作成 =====
+function createTimelineGrid() {
+    const timelineContent = document.getElementById('timeline-content');
+    if (!timelineContent) return;
+    
+    // 既存のグリッドを削除
+    const existingGrid = document.getElementById('timeline-grid');
+    if (existingGrid) existingGrid.remove();
+    
+    const grid = document.createElement('div');
+    grid.className = 'timeline-grid';
+    grid.id = 'timeline-grid';
+    
+    // 最大フレーム数を計算（ズームレベルに応じて調整）
+    const maxFrames = Math.max(300, Math.ceil(3000 / timelinePixelsPerFrame) * 10);
+    
+    // フレームマーカーを作成
+    for (let i = 0; i <= maxFrames; i++) {
+        const marker = document.createElement('div');
+        marker.className = i % 10 === 0 ? 'frame-marker major' : 'frame-marker';
+        marker.style.flex = `0 0 ${timelinePixelsPerFrame}px`;
+        
+        if (i % 10 === 0) {
+            const number = document.createElement('span');
+            number.className = 'frame-number';
+            number.textContent = i;
+            marker.appendChild(number);
+        }
+        
+        grid.appendChild(marker);
+    }
+    
+    // タイムラインコンテンツの幅を設定
+    timelineContent.style.minWidth = (maxFrames * timelinePixelsPerFrame) + 'px';
+    
+    timelineContent.appendChild(grid);
+}
+
 // ===== タイムライン更新 =====
 function updateTimeline() {
     const timelineLayers = document.getElementById('timeline-layers');
     const timelineContent = document.getElementById('timeline-content');
     if (!timelineLayers || !timelineContent) return;
+    
+    // グリッドを再作成（ズーム変更対応）
+    createTimelineGrid();
     
     // 既存のレイヤーアイテムとトラックを削除
     timelineLayers.innerHTML = '';
@@ -100,6 +163,11 @@ function updateTimeline() {
     
     // 再生ヘッドの位置を更新
     updatePlayhead();
+    
+    // 書き出しマーカーを描画
+    if (typeof renderExportMarkers === 'function') {
+        renderExportMarkers();
+    }
 }
 
 // ===== タイムラインレイヤー描画（再帰的） =====
@@ -115,6 +183,7 @@ function renderTimelineLayer(layer, y, depth) {
     if (layer.type === 'blink') icon = '👀';
     if (layer.type === 'bounce') icon = '🎈';
     if (layer.type === 'puppet') icon = '🎭';
+    if (layer.type === 'audio') icon = '🎵';
     
     // レイヤーが展開されているか
     const isExpanded = expandedLayers[layer.id] || false;
@@ -164,10 +233,17 @@ function renderTimelineLayer(layer, y, depth) {
         });
     }
     
+    // 音声レイヤーの場合は音声クリップを描画
+    if (layer.type === 'audio' && layer.audioClips && typeof renderAudioClipOnTimeline === 'function') {
+        layer.audioClips.forEach(clip => {
+            renderAudioClipOnTimeline(layer, clip, y);
+        });
+    }
+    
     y += 40;
     
-    // プロパティを展開表示
-    if (isExpanded && (layer.type === 'image' || layer.type === 'lipsync' || layer.type === 'blink' || layer.type === 'bounce' || layer.type === 'puppet' || layer.type === 'folder')) {
+    // プロパティを展開表示（音声レイヤー以外）
+    if (isExpanded && layer.type !== 'audio' && (layer.type === 'image' || layer.type === 'lipsync' || layer.type === 'blink' || layer.type === 'bounce' || layer.type === 'puppet' || layer.type === 'folder')) {
         const properties = ['x', 'y', 'rotation', 'scale', 'opacity'];
         const propertyNames = {
             'x': 'X位置',
@@ -317,7 +393,7 @@ function renderKeyframe(layer, kfIndex, y, property = null) {
         keyframeEl.classList.add('selected');
     }
     
-    const framePos = kf.frame * 20; // 1フレーム = 20px
+    const framePos = kf.frame * timelinePixelsPerFrame;
     keyframeEl.style.left = framePos + 'px';
     keyframeEl.style.top = y + 'px';
     keyframeEl.style.zIndex = '10';
@@ -349,7 +425,7 @@ function renderBounceKeyframeOnTrack(layer, kfIndex, y, type) {
     const keyframeEl = document.createElement('div');
     keyframeEl.className = 'keyframe bounce';
     
-    const framePos = kf.frame * 20; // 1フレーム = 20px
+    const framePos = kf.frame * timelinePixelsPerFrame;
     keyframeEl.style.left = framePos + 'px';
     keyframeEl.style.top = y + 'px';
     keyframeEl.style.zIndex = '10';
@@ -384,7 +460,7 @@ function renderBounceKeyframe(layer, kfIndex, y) {
     const keyframeEl = document.createElement('div');
     keyframeEl.className = 'keyframe bounce';
     
-    const framePos = kf.frame * 20; // 1フレーム = 20px
+    const framePos = kf.frame * timelinePixelsPerFrame;
     keyframeEl.style.left = framePos + 'px';
     keyframeEl.style.top = y + 'px';
     keyframeEl.style.zIndex = '10';
@@ -427,7 +503,7 @@ function updatePlayhead() {
     if (!playhead || !frameDisplay) return;
     
     const currentFrame = Math.floor(currentTime * projectFPS);
-    const framePos = currentFrame * 20; // 1フレーム = 20px
+    const framePos = currentFrame * timelinePixelsPerFrame;
     
     // transitionなしで即座に更新
     playhead.style.left = framePos + 'px';
@@ -463,7 +539,7 @@ function handleTimelineMouseDown(e) {
     
     // シークバー（くま）の範囲でクリック（上部40pxの範囲）
     const currentFrame = Math.floor(currentTime * projectFPS);
-    const playheadX = currentFrame * 20;
+    const playheadX = currentFrame * timelinePixelsPerFrame;
     const hitArea = 25;
     
     if (clickY < 40 && Math.abs(clickX - playheadX) < hitArea) {
@@ -474,7 +550,7 @@ function handleTimelineMouseDown(e) {
     }
     
     // 通常のタイムラインクリック（瞬時移動）
-    const clickedFrame = Math.floor(clickX / 20);
+    const clickedFrame = Math.floor(clickX / timelinePixelsPerFrame);
     currentTime = clickedFrame / projectFPS;
     
     // キーフレーム補間を適用
@@ -491,7 +567,7 @@ function updateSeekbarPosition(e) {
     const x = e.clientX - rect.left + timeline.scrollLeft;
     
     // マウス位置から直接currentTimeを計算（フレーム単位ではなく連続的に）
-    const newTime = Math.max(0, x / 20) / projectFPS;
+    const newTime = Math.max(0, x / timelinePixelsPerFrame) / projectFPS;
     pendingSeekbarTime = newTime;
     
     // requestAnimationFrameで描画をスケジュール（30fps程度に制限）
@@ -548,7 +624,7 @@ function handleKeyframeDrag(e) {
     if (!isDraggingKeyframe || !selectedKeyframe) return;
     
     const deltaX = e.clientX - keyframeDragStart.x;
-    const deltaFrames = Math.round(deltaX / 20);
+    const deltaFrames = Math.round(deltaX / timelinePixelsPerFrame);
     const newFrame = Math.max(0, keyframeDragStart.frame + deltaFrames);
     
     const layer = layers.find(l => l.id === selectedKeyframe.layerId);
@@ -772,7 +848,7 @@ function handleBounceKeyframeMouseDown(e, layerId, kfIndex, type) {
 document.addEventListener('mousemove', (e) => {
     if (isDraggingBounceKeyframe && selectedBounceKeyframe) {
         const deltaX = e.clientX - bounceKeyframeDragStart.x;
-        const deltaFrame = Math.round(deltaX / 20);
+        const deltaFrame = Math.round(deltaX / timelinePixelsPerFrame);
         const newFrame = Math.max(0, bounceKeyframeDragStart.frame + deltaFrame);
         
         const layer = layers.find(l => l.id === selectedBounceKeyframe.layerId);
@@ -821,7 +897,7 @@ function renderPuppetPinKeyframe(layer, pinIndex, kfIndex, y) {
     if (!pin.keyframes || !pin.keyframes[kfIndex]) return;
     
     const kf = pin.keyframes[kfIndex];
-    const x = kf.frame * 20;
+    const x = kf.frame * timelinePixelsPerFrame;
     
     const kfElement = document.createElement('div');
     kfElement.className = 'keyframe puppet-keyframe';
@@ -862,7 +938,7 @@ function handlePuppetKeyframeMouseDown(e, layerId, pinIndex, kfIndex) {
 document.addEventListener('mousemove', (e) => {
     if (isDraggingPuppetKeyframe && selectedPuppetKeyframe) {
         const deltaX = e.clientX - puppetKeyframeDragStart.x;
-        const deltaFrame = Math.round(deltaX / 20);
+        const deltaFrame = Math.round(deltaX / timelinePixelsPerFrame);
         const newFrame = Math.max(0, puppetKeyframeDragStart.frame + deltaFrame);
         
         const layer = layers.find(l => l.id === selectedPuppetKeyframe.layerId);

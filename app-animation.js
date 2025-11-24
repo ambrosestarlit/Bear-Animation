@@ -1,6 +1,6 @@
 /**
- * ⭐ Starlit Puppet Editor v1.0.3
- * アニメーション・再生機能
+ * ⭐ Starlit Puppet Editor v1.12.0
+ * アニメーション・再生機能（音声同期対応・ループ再生対応）
  */
 
 // ===== 再生/停止 =====
@@ -11,9 +11,21 @@ function togglePlayback() {
     if (isPlaying) {
         btn.textContent = '⏸️ 停止';
         lastFrameTime = performance.now();
+        
+        // 音声再生を開始
+        if (typeof syncAudioWithPlayback === 'function') {
+            syncAudioWithPlayback(true, currentTime);
+        }
+        
         animationFrameId = requestAnimationFrame(animationLoop);
     } else {
         btn.textContent = '▶️ 再生';
+        
+        // 音声再生を停止
+        if (typeof syncAudioWithPlayback === 'function') {
+            syncAudioWithPlayback(false, currentTime);
+        }
+        
         if (animationFrameId) {
             cancelAnimationFrame(animationFrameId);
             animationFrameId = null;
@@ -28,6 +40,12 @@ function stopPlayback() {
         isPlaying = false;
         const btn = document.getElementById('play-btn');
         btn.textContent = '▶️ 再生';
+        
+        // 音声再生を停止
+        if (typeof syncAudioWithPlayback === 'function') {
+            syncAudioWithPlayback(false, currentTime);
+        }
+        
         if (animationFrameId) {
             cancelAnimationFrame(animationFrameId);
             animationFrameId = null;
@@ -58,6 +76,11 @@ function animationLoop(timestamp) {
     lastFrameTime = timestamp;
     
     currentTime += deltaTime;
+    
+    // ループ再生チェック
+    if (typeof checkLoopPlayback === 'function') {
+        checkLoopPlayback();
+    }
     
     // キーフレーム補間を適用
     if (typeof applyKeyframeInterpolation === 'function') {

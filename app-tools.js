@@ -23,28 +23,57 @@ function toggleTool(toolName) {
 }
 
 function updateToolButtons() {
+    // プロパティパネル内のボタン（後方互換性のため）
     const rotationBtn = document.getElementById('tool-rotation');
     const positionBtn = document.getElementById('tool-position');
     
+    // ヘッダーツールバーのボタン
+    const headerRotationBtn = document.getElementById('header-tool-rotation');
+    const headerPositionBtn = document.getElementById('header-tool-position');
+    
+    const activeStyle = 'linear-gradient(135deg, var(--accent-gold), var(--biscuit-medium))';
+    const activeShadow = '0 0 10px rgba(255, 215, 0, 0.5)';
+    
+    // 回転ボタン
     if (rotationBtn) {
         if (currentTool === 'rotation') {
-            rotationBtn.style.background = 'linear-gradient(135deg, var(--accent-gold), var(--biscuit-medium))';
-            rotationBtn.style.boxShadow = '0 0 10px rgba(255, 215, 0, 0.5)';
+            rotationBtn.style.background = activeStyle;
+            rotationBtn.style.boxShadow = activeShadow;
         } else {
             rotationBtn.style.background = '';
             rotationBtn.style.boxShadow = '';
         }
     }
     
+    if (headerRotationBtn) {
+        if (currentTool === 'rotation') {
+            headerRotationBtn.classList.add('active');
+        } else {
+            headerRotationBtn.classList.remove('active');
+        }
+    }
+    
+    // ポジションボタン
     if (positionBtn) {
         if (currentTool === 'position') {
-            positionBtn.style.background = 'linear-gradient(135deg, var(--accent-gold), var(--biscuit-medium))';
-            positionBtn.style.boxShadow = '0 0 10px rgba(255, 215, 0, 0.5)';
+            positionBtn.style.background = activeStyle;
+            positionBtn.style.boxShadow = activeShadow;
         } else {
             positionBtn.style.background = '';
             positionBtn.style.boxShadow = '';
         }
     }
+    
+    if (headerPositionBtn) {
+        if (currentTool === 'position') {
+            headerPositionBtn.classList.add('active');
+        } else {
+            headerPositionBtn.classList.remove('active');
+        }
+    }
+    
+    // ヘッダーツールバーの表示状態を更新
+    updateHeaderToolbar();
 }
 
 function updateCanvasCursor() {
@@ -106,8 +135,14 @@ function handleCanvasMouseMove(e) {
     
     if (currentTool === 'rotation') {
         // アンカーポイントの画面座標
-        const anchorScreenX = layer.x;
-        const anchorScreenY = layer.y;
+        let anchorScreenX = layer.x;
+        let anchorScreenY = layer.y;
+        
+        // フォルダの場合はanchorOffsetを加算
+        if (layer.type === 'folder') {
+            anchorScreenX += (layer.anchorOffsetX || 0);
+            anchorScreenY += (layer.anchorOffsetY || 0);
+        }
         
         // 開始点と現在点の角度を計算
         const startAngle = Math.atan2(dragStart.y - anchorScreenY, dragStart.x - anchorScreenX);
@@ -154,6 +189,11 @@ function handleCanvasMouseUp(e) {
         
         // プロパティパネルを完全に更新
         updatePropertiesPanel();
+        
+        // 履歴を保存
+        if (typeof saveHistory === 'function') {
+            saveHistory();
+        }
     }
 }
 

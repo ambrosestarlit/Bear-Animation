@@ -527,24 +527,26 @@ function drawBounceLayer(layer, localTime) {
         // 画像を描画（アンカーポイントを基準に）
         ctx.drawImage(layer.img, -anchorOffsetX, -anchorOffsetY, layer.width, layer.height);
         
-        // アンカーポイント表示
-        ctx.fillStyle = '#ffd700';  // 金色
-        ctx.strokeStyle = '#ffffff';  // 白
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(0, 0, 10, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        
-        // 十字線
-        ctx.strokeStyle = '#ffd700';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(-25, 0);
-        ctx.lineTo(25, 0);
-        ctx.moveTo(0, -25);
-        ctx.lineTo(0, 25);
-        ctx.stroke();
+        // アンカーポイント表示 - 書き出し中は描画しない
+        if (typeof isExporting === 'undefined' || !isExporting) {
+            ctx.fillStyle = '#ffd700';  // 金色
+            ctx.strokeStyle = '#ffffff';  // 白
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, 0, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            
+            // 十字線
+            ctx.strokeStyle = '#ffd700';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(-25, 0);
+            ctx.lineTo(25, 0);
+            ctx.moveTo(0, -25);
+            ctx.lineTo(0, 25);
+            ctx.stroke();
+        }
         
         ctx.restore();
         return;
@@ -641,24 +643,26 @@ function drawBounceLayer(layer, localTime) {
     // 揺れモーション適用（キーフレームのアンカー座標を使用）
     applyBounceWebGL(ctx, layer.img, layer.width, layer.height, localTime, activeParams, animationStartTime, keyframeAnchorX, keyframeAnchorY);
     
-    // アンカーポイント表示
-    ctx.fillStyle = '#ffd700';  // 金色
-    ctx.strokeStyle = '#ffffff';  // 白
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(0, 0, 10, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    
-    // 十字線
-    ctx.strokeStyle = '#ffd700';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(-25, 0);
-    ctx.lineTo(25, 0);
-    ctx.moveTo(0, -25);
-    ctx.lineTo(0, 25);
-    ctx.stroke();
+    // アンカーポイント表示 - 書き出し中は描画しない
+    if (typeof isExporting === 'undefined' || !isExporting) {
+        ctx.fillStyle = '#ffd700';  // 金色
+        ctx.strokeStyle = '#ffffff';  // 白
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        
+        // 十字線
+        ctx.strokeStyle = '#ffd700';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(-25, 0);
+        ctx.lineTo(25, 0);
+        ctx.moveTo(0, -25);
+        ctx.lineTo(0, 25);
+        ctx.stroke();
+    }
     
     ctx.restore();
 }

@@ -65,6 +65,11 @@ function loadImage(file) {
             }
             
             render();
+            
+            // 履歴を保存
+            if (typeof saveHistory === 'function') {
+                saveHistory();
+            }
         };
         img.src = e.target.result;
     };
@@ -151,28 +156,29 @@ function render() {
         if (layer.type === 'puppet') {
             drawPuppetLayer(layer, localTime);
             
-            // 軸アンカー（赤い十字マーク）を描画
-            ctx.save();
-            const parentTransform = getParentTransform(layer.parentLayerId);
-            
-            // ★ 子のローカル座標を親の回転・スケールで変換 ★
-            const parentRad = parentTransform.rotation * Math.PI / 180;
-            const parentCos = Math.cos(parentRad);
-            const parentSin = Math.sin(parentRad);
-            const transformedLayerX = layer.x * parentTransform.scale * parentCos - layer.y * parentTransform.scale * parentSin;
-            const transformedLayerY = layer.x * parentTransform.scale * parentSin + layer.y * parentTransform.scale * parentCos;
-            
-            const finalX = parentTransform.x + transformedLayerX;
-            const finalY = parentTransform.y + transformedLayerY;
-            const finalRotation = layer.rotation + parentTransform.rotation;
-            const finalScale = layer.scale * parentTransform.scale;
-            
-            ctx.translate(finalX, finalY);
-            ctx.rotate(finalRotation * Math.PI / 180);
-            ctx.scale(finalScale, finalScale);
-            
-            // アンカーポイントの円
-            ctx.fillStyle = '#ff6b6b';
+            // 軸アンカー（赤い十字マーク）を描画 - 書き出し中は描画しない
+            if (typeof isExporting === 'undefined' || !isExporting) {
+                ctx.save();
+                const parentTransform = getParentTransform(layer.parentLayerId);
+                
+                // ★ 子のローカル座標を親の回転・スケールで変換 ★
+                const parentRad = parentTransform.rotation * Math.PI / 180;
+                const parentCos = Math.cos(parentRad);
+                const parentSin = Math.sin(parentRad);
+                const transformedLayerX = layer.x * parentTransform.scale * parentCos - layer.y * parentTransform.scale * parentSin;
+                const transformedLayerY = layer.x * parentTransform.scale * parentSin + layer.y * parentTransform.scale * parentCos;
+                
+                const finalX = parentTransform.x + transformedLayerX;
+                const finalY = parentTransform.y + transformedLayerY;
+                const finalRotation = layer.rotation + parentTransform.rotation;
+                const finalScale = layer.scale * parentTransform.scale;
+                
+                ctx.translate(finalX, finalY);
+                ctx.rotate(finalRotation * Math.PI / 180);
+                ctx.scale(finalScale, finalScale);
+                
+                // アンカーポイントの円
+                ctx.fillStyle = '#ff6b6b';
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = 3 / finalScale;
             ctx.beginPath();
@@ -191,6 +197,7 @@ function render() {
             ctx.stroke();
             
             ctx.restore();
+            }
             return;
         }
         
@@ -288,25 +295,27 @@ function render() {
             );
         }
         
-        // アンカーポイントを常に表示（風揺れON/OFF関係なく）
-        // アンカーポイントの円
-        targetCtx.fillStyle = '#ff6b6b';
-        targetCtx.strokeStyle = '#ffffff';
-        targetCtx.lineWidth = 3;
-        targetCtx.beginPath();
-        targetCtx.arc(0, 0, 10, 0, Math.PI * 2);
-        targetCtx.fill();
-        targetCtx.stroke();
-        
-        // 十字線（大きく）
-        targetCtx.strokeStyle = '#ff6b6b';
-        targetCtx.lineWidth = 3;
-        targetCtx.beginPath();
-        targetCtx.moveTo(-25, 0);
-        targetCtx.lineTo(25, 0);
-        targetCtx.moveTo(0, -25);
-        targetCtx.lineTo(0, 25);
-        targetCtx.stroke();
+        // アンカーポイントを常に表示（風揺れON/OFF関係なく）- 書き出し中は描画しない
+        if (typeof isExporting === 'undefined' || !isExporting) {
+            // アンカーポイントの円
+            targetCtx.fillStyle = '#ff6b6b';
+            targetCtx.strokeStyle = '#ffffff';
+            targetCtx.lineWidth = 3;
+            targetCtx.beginPath();
+            targetCtx.arc(0, 0, 10, 0, Math.PI * 2);
+            targetCtx.fill();
+            targetCtx.stroke();
+            
+            // 十字線（大きく）
+            targetCtx.strokeStyle = '#ff6b6b';
+            targetCtx.lineWidth = 3;
+            targetCtx.beginPath();
+            targetCtx.moveTo(-25, 0);
+            targetCtx.lineTo(25, 0);
+            targetCtx.moveTo(0, -25);
+            targetCtx.lineTo(0, 25);
+            targetCtx.stroke();
+        }
         
         if (useClipping) {
             tempCtx.restore();
@@ -334,12 +343,16 @@ function render() {
     if (pinMode && selectedLayerIds.length === 1) {
         const layer = layers.find(l => l.id === selectedLayerIds[0]);
         if (layer && layer.visible && layer.type === 'image') {
-            updatePinElements();
+            // 書き出し中はピン要素を更新しない
+            if (typeof isExporting === 'undefined' || !isExporting) {
+                updatePinElements();
+            }
         }
     }
     
     // パペットアンカー表示を更新（関数内部で判定）
-    if (typeof drawPuppetAnchorElements === 'function') {
+    // 書き出し中はアンカーを描画しない
+    if (typeof drawPuppetAnchorElements === 'function' && (typeof isExporting === 'undefined' || !isExporting)) {
         drawPuppetAnchorElements();
     }
     
@@ -423,23 +436,25 @@ function drawLipSyncLayer(layer, time) {
         height
     );
     
-    // アンカーポイント表示
-    ctx.fillStyle = '#ff69b4';
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(0, 0, 10, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    
-    ctx.strokeStyle = '#ff69b4';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(-25, 0);
-    ctx.lineTo(25, 0);
-    ctx.moveTo(0, -25);
-    ctx.lineTo(0, 25);
-    ctx.stroke();
+    // アンカーポイント表示 - 書き出し中は描画しない
+    if (typeof isExporting === 'undefined' || !isExporting) {
+        ctx.fillStyle = '#ff69b4';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        
+        ctx.strokeStyle = '#ff69b4';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(-25, 0);
+        ctx.lineTo(25, 0);
+        ctx.moveTo(0, -25);
+        ctx.lineTo(0, 25);
+        ctx.stroke();
+    }
     
     ctx.restore();
 }
@@ -511,23 +526,25 @@ function drawBlinkLayer(layer, time) {
         height
     );
     
-    // アンカーポイント表示
-    ctx.fillStyle = '#87ceeb';
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(0, 0, 10, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    
-    ctx.strokeStyle = '#87ceeb';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(-25, 0);
-    ctx.lineTo(25, 0);
-    ctx.moveTo(0, -25);
-    ctx.lineTo(0, 25);
-    ctx.stroke();
+    // アンカーポイント表示 - 書き出し中は描画しない
+    if (typeof isExporting === 'undefined' || !isExporting) {
+        ctx.fillStyle = '#87ceeb';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        
+        ctx.strokeStyle = '#87ceeb';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(-25, 0);
+        ctx.lineTo(25, 0);
+        ctx.moveTo(0, -25);
+        ctx.lineTo(0, 25);
+        ctx.stroke();
+    }
     
     ctx.restore();
 }
@@ -552,9 +569,13 @@ function applyParentTransform(layer) {
     // 親の位置に移動
     ctx.translate(parent.x, parent.y);
     
-    // フォルダの場合（widthとheightがない）
+    // フォルダの場合（ピクセルオフセットでアンカー計算）
     if (parent.type === 'folder') {
-        // フォルダは位置を中心として回転とスケールを適用
+        const anchorOffsetX = parent.anchorOffsetX || 0;
+        const anchorOffsetY = parent.anchorOffsetY || 0;
+        
+        // アンカーポイントを原点に移動
+        ctx.translate(anchorOffsetX, anchorOffsetY);
         ctx.rotate(parent.rotation * Math.PI / 180);
         ctx.scale(parent.scale, parent.scale);
         return;

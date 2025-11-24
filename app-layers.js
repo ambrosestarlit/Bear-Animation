@@ -1,11 +1,12 @@
 /**
- * ⭐ Starlit Puppet Editor v1.10.1
- * レイヤーリスト・フォルダ機能（フォルダ親子関係対応）
+ * ⭐ Starlit Puppet Editor v1.11.0
+ * レイヤーリスト・フォルダ機能（音声レイヤー対応）
  * - フォルダ同士の親子関係表示対応
  * - レイヤー順序修正: 上が前面に表示
  * - 親子関係の表示問題を修正
  * - 口パクレイヤー追加
  * - まばたきレイヤー追加
+ * - 音声レイヤー追加
  */
 
 // ===== レイヤーリスト更新 =====
@@ -74,6 +75,13 @@ function updateLayerList() {
     puppetBtn.style.cssText = 'width: 100%; padding: 8px; background: linear-gradient(135deg, #9370db, #8a2be2); color: white; border: 2px solid var(--border-color); border-radius: 6px; cursor: pointer; font-weight: bold; display: block !important; visibility: visible !important;';
     puppetBtn.onclick = createPuppetLayer;
     buttonContainer.appendChild(puppetBtn);
+    
+    // 音声レイヤー追加ボタン
+    const audioBtn = document.createElement('button');
+    audioBtn.textContent = '🎵 音声追加';
+    audioBtn.style.cssText = 'width: 100%; padding: 8px; background: linear-gradient(135deg, #1db954, #1ed760); color: white; border: 2px solid var(--border-color); border-radius: 6px; cursor: pointer; font-weight: bold; display: block !important; visibility: visible !important;';
+    audioBtn.onclick = createAudioLayer;
+    buttonContainer.appendChild(audioBtn);
     
     layerList.appendChild(buttonContainer);
     
@@ -216,6 +224,24 @@ function renderLayerItem(layer, depth) {
             renderLayerItem(children2[i], depth + 1);
         }
     }
+    // 音声レイヤーの場合
+    else if (layer.type === 'audio') {
+        const clipCount = layer.audioClips ? layer.audioClips.length : 0;
+        
+        item.innerHTML = `
+            <span class="layer-name">🎵 ${layer.name} <span style="font-size: 10px; color: #1db954;">(${clipCount}クリップ)</span></span>
+            <span class="layer-controls">
+                <button onclick="toggleLayerVisibility(${layer.id}, event)">${layer.visible ? '👀' : '👀‍🗨️'}</button>
+                <button onclick="deleteLayer(${layer.id}, event)">🗑️</button>
+            </span>
+        `;
+        
+        item.style.background = 'linear-gradient(135deg, #1a3d1a, #2d5a2d)';
+        item.style.borderColor = '#1db954';
+        
+        item.addEventListener('click', (e) => selectLayer(layer.id, e.shiftKey));
+        layerList.appendChild(item);
+    }
     // 画像レイヤーの場合
     else {
         // 風揺れアイコン
@@ -317,6 +343,7 @@ function toggleLayerVisibility(layerId, event) {
 
 // ===== レイヤー削除 =====
 function deleteLayer(layerId, event) {
+    const isTopLevel = event !== null;
     if (event) event.stopPropagation();
     
     const layer = layers.find(l => l.id === layerId);
@@ -345,6 +372,11 @@ function deleteLayer(layerId, event) {
     updateLayerList();
     updatePropertiesPanel();
     render();
+    
+    // 最上位の削除操作の場合のみ履歴保存
+    if (isTopLevel && typeof saveHistory === 'function') {
+        saveHistory();
+    }
 }
 
 // ===== フォルダの開閉 =====
@@ -381,8 +413,8 @@ function createFolderFromSelection() {
     // 選択されたレイヤーの中心位置を計算
     let sumX = 0, sumY = 0;
     layersToMove.forEach(layer => {
-        sumX += layer.x;
-        sumY += layer.y;
+        sumX += layer.x || 0;
+        sumY += layer.y || 0;
     });
     const centerX = sumX / layersToMove.length;
     const centerY = sumY / layersToMove.length;
@@ -404,6 +436,9 @@ function createFolderFromSelection() {
         opacity: 1.0,
         anchorX: 0.5,
         anchorY: 0.5,
+        // フォルダ専用アンカーオフセット（ピクセル単位）
+        anchorOffsetX: 0,
+        anchorOffsetY: 0,
         blendMode: 'source-over',
         
         // フォルダーにも風揺れ機能を追加
@@ -426,12 +461,20 @@ function createFolderFromSelection() {
     // 各レイヤーをフォルダからの相対座標に変換
     layersToMove.forEach(layer => {
         // 現在の絶対座標を保存
-        const worldX = layer.x;
-        const worldY = layer.y;
+        const worldX = layer.x || 0;
+        const worldY = layer.y || 0;
         
         // フォルダからの相対座標に変換
         layer.x = worldX - centerX;
         layer.y = worldY - centerY;
+        
+        // キーフレームも相対座標に変換
+        if (layer.keyframes && layer.keyframes.length > 0) {
+            layer.keyframes.forEach(kf => {
+                if (kf.x !== undefined) kf.x = kf.x - centerX;
+                if (kf.y !== undefined) kf.y = kf.y - centerY;
+            });
+        }
         
         // フォルダを親に設定
         layer.parentLayerId = folder.id;
@@ -443,6 +486,11 @@ function createFolderFromSelection() {
     updateLayerList();
     updatePropertiesPanel();
     render();
+    
+    // 履歴を保存
+    if (typeof saveHistory === 'function') {
+        saveHistory();
+    }
 }
 
 // ===== 口パクレイヤー作成 =====
@@ -490,6 +538,11 @@ function createLipSyncLayer() {
             updateLayerList();
             selectLayer(layer.id, false);
             render();
+            
+            // 履歴を保存
+            if (typeof saveHistory === 'function') {
+                saveHistory();
+            }
         });
     };
     input.click();
@@ -540,6 +593,11 @@ function createBlinkLayer() {
             updateLayerList();
             selectLayer(layer.id, false);
             render();
+            
+            // 履歴を保存
+            if (typeof saveHistory === 'function') {
+                saveHistory();
+            }
         });
     };
     input.click();
@@ -694,6 +752,11 @@ function createBounceLayer() {
                 }
                 
                 render();
+                
+                // 履歴を保存
+                if (typeof saveHistory === 'function') {
+                    saveHistory();
+                }
             };
             img.src = e.target.result;
         };
@@ -701,4 +764,3 @@ function createBounceLayer() {
     };
     input.click();
 }
-

@@ -1,14 +1,201 @@
 /**
  * ⭐ Starlit Puppet Editor v1.10.1
- * プロパティパネル - フォルダ親子関係対応
+ * プロパティパネル - UI最適化版
+ * - ヘッダーツールバーに操作ツール・アンカー設定を配置
+ * - トランスフォーム・ブレンドモードを最上部に統一
  * - フォルダ同士で親子関係を設定可能に
  * - 循環参照防止機能
- * - アンカー設定モードとピンモードの競合を修正
- * - 風揺れ完全UI実装 + 口パク・まばたき対応 + 揺れモーション分割数調整 + 揺れピン制御
  */
+
+// ===== 共通UI生成関数 =====
+
+// ヘッダーツールバーの更新
+function updateHeaderToolbar() {
+    const layer = layers.find(l => l.id === selectedLayerIds[0]);
+    const toolbar = document.getElementById('header-toolbar');
+    const anchorSliders = document.getElementById('header-anchor-sliders');
+    
+    if (!toolbar) return;
+    
+    // レイヤーが選択されていない場合は非表示
+    if (!layer) {
+        toolbar.style.opacity = '0.5';
+        toolbar.style.pointerEvents = 'none';
+        return;
+    }
+    
+    toolbar.style.opacity = '1';
+    toolbar.style.pointerEvents = 'auto';
+    
+    // ツールボタンの状態更新
+    const rotBtn = document.getElementById('header-tool-rotation');
+    const posBtn = document.getElementById('header-tool-position');
+    
+    if (rotBtn) {
+        rotBtn.classList.toggle('active', currentTool === 'rotation');
+    }
+    if (posBtn) {
+        posBtn.classList.toggle('active', currentTool === 'position');
+    }
+    
+    // フォルダの場合はスライダーを非表示（ピクセルオフセットなので0-100%では表現不可）
+    if (anchorSliders) {
+        if (layer.type === 'folder') {
+            anchorSliders.style.display = 'none';
+        } else {
+            anchorSliders.style.display = 'flex';
+            
+            // アンカースライダーの値を更新
+            const anchorX = layer.anchorX !== undefined ? layer.anchorX : 0.5;
+            const anchorY = layer.anchorY !== undefined ? layer.anchorY : 0.5;
+            
+            const xSlider = document.getElementById('header-anchor-x-slider');
+            const ySlider = document.getElementById('header-anchor-y-slider');
+            const xLabel = document.getElementById('headerAnchorX');
+            const yLabel = document.getElementById('headerAnchorY');
+            
+            if (xSlider) xSlider.value = Math.round(anchorX * 100);
+            if (ySlider) ySlider.value = Math.round(anchorY * 100);
+            if (xLabel) xLabel.textContent = Math.round(anchorX * 100);
+            if (yLabel) yLabel.textContent = Math.round(anchorY * 100);
+        }
+    }
+}
+
+// トランスフォームUI生成
+function generateTransformUI(layer) {
+    return `
+        <div class="property-group">
+            <h4>📍 トランスフォーム</h4>
+            
+            <div style="margin-bottom: 12px;">
+                <label style="font-size: 11px; display: block; margin-bottom: 4px;">
+                    X: <span id="transformXValue">${layer.x.toFixed(0)}</span>
+                </label>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="range" class="property-slider" style="flex: 1;" value="${layer.x}" 
+                        min="-2000" max="2000" step="1"
+                        oninput="document.getElementById('transformXValue').textContent = this.value; if(this.nextElementSibling) this.nextElementSibling.value = this.value; updateLayerPropertyLive('x', parseFloat(this.value))"
+                        onchange="updateLayerProperty('x', parseFloat(this.value))">
+                    <input type="number" style="width: 80px;" value="${layer.x.toFixed(0)}" 
+                        onchange="updateLayerProperty('x', parseFloat(this.value)); updatePropertiesPanel()">
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 12px;">
+                <label style="font-size: 11px; display: block; margin-bottom: 4px;">
+                    Y: <span id="transformYValue">${layer.y.toFixed(0)}</span>
+                </label>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="range" class="property-slider" style="flex: 1;" value="${layer.y}" 
+                        min="-2000" max="2000" step="1"
+                        oninput="document.getElementById('transformYValue').textContent = this.value; if(this.nextElementSibling) this.nextElementSibling.value = this.value; updateLayerPropertyLive('y', parseFloat(this.value))"
+                        onchange="updateLayerProperty('y', parseFloat(this.value))">
+                    <input type="number" style="width: 80px;" value="${layer.y.toFixed(0)}" 
+                        onchange="updateLayerProperty('y', parseFloat(this.value)); updatePropertiesPanel()">
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 12px;">
+                <label style="font-size: 11px; display: block; margin-bottom: 4px;">
+                    回転: <span id="transformRotValue">${layer.rotation.toFixed(1)}°</span>
+                </label>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="range" class="property-slider" style="flex: 1;" value="${layer.rotation}" 
+                        min="-360" max="360" step="0.1"
+                        oninput="document.getElementById('transformRotValue').textContent = parseFloat(this.value).toFixed(1) + '°'; updateLayerPropertyLive('rotation', parseFloat(this.value))"
+                        onchange="updateLayerProperty('rotation', parseFloat(this.value))">
+                    <input type="number" style="width: 80px;" value="${layer.rotation.toFixed(1)}" step="0.1"
+                        onchange="updateLayerProperty('rotation', parseFloat(this.value)); updatePropertiesPanel()">
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 12px;">
+                <label style="font-size: 11px; display: block; margin-bottom: 4px;">
+                    スケール: <span id="transformScaleValue">${layer.scale.toFixed(2)}</span>
+                </label>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="range" class="property-slider" style="flex: 1;" value="${layer.scale}" 
+                        min="0.1" max="3" step="0.01"
+                        oninput="document.getElementById('transformScaleValue').textContent = parseFloat(this.value).toFixed(2); updateLayerPropertyLive('scale', parseFloat(this.value))"
+                        onchange="updateLayerProperty('scale', parseFloat(this.value))">
+                    <input type="number" style="width: 80px;" value="${layer.scale.toFixed(2)}" step="0.01"
+                        onchange="updateLayerProperty('scale', parseFloat(this.value)); updatePropertiesPanel()">
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 0;">
+                <label style="font-size: 11px; display: block; margin-bottom: 4px;">
+                    不透明度: <span id="transformOpacityValue">${(layer.opacity * 100).toFixed(0)}%</span>
+                </label>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="range" class="property-slider" style="flex: 1;" value="${layer.opacity}" 
+                        min="0" max="1" step="0.01"
+                        oninput="document.getElementById('transformOpacityValue').textContent = (parseFloat(this.value) * 100).toFixed(0) + '%'; updateLayerPropertyLive('opacity', parseFloat(this.value))"
+                        onchange="updateLayerProperty('opacity', parseFloat(this.value))">
+                    <input type="number" style="width: 80px;" value="${(layer.opacity * 100).toFixed(0)}" step="1" min="0" max="100"
+                        onchange="updateLayerProperty('opacity', parseFloat(this.value) / 100); updatePropertiesPanel()">
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// ブレンドモードUI生成
+function generateBlendModeUI(layer) {
+    return `
+        <div class="property-group">
+            <h4>🎨 ブレンド</h4>
+            <div style="margin-bottom: 0;">
+                <label style="font-size: 11px; display: block; margin-bottom: 4px;">ブレンドモード</label>
+                <select onchange="updateLayerProperty('blendMode', this.value); updatePropertiesPanel()" 
+                    style="width: 100%; padding: 6px; background: var(--biscuit-dark); color: var(--chocolate-dark); border: 1px solid var(--border-color); border-radius: 4px;">
+                    <option value="source-over" ${layer.blendMode === 'source-over' ? 'selected' : ''}>通常</option>
+                    <option value="multiply" ${layer.blendMode === 'multiply' ? 'selected' : ''}>乗算</option>
+                    <option value="screen" ${layer.blendMode === 'screen' ? 'selected' : ''}>スクリーン</option>
+                    <option value="overlay" ${layer.blendMode === 'overlay' ? 'selected' : ''}>オーバーレイ</option>
+                    <option value="darken" ${layer.blendMode === 'darken' ? 'selected' : ''}>比較(暗)</option>
+                    <option value="lighten" ${layer.blendMode === 'lighten' ? 'selected' : ''}>比較(明)</option>
+                    <option value="color-dodge" ${layer.blendMode === 'color-dodge' ? 'selected' : ''}>覆い焼きカラー</option>
+                    <option value="color-burn" ${layer.blendMode === 'color-burn' ? 'selected' : ''}>焼き込みカラー</option>
+                    <option value="hard-light" ${layer.blendMode === 'hard-light' ? 'selected' : ''}>ハードライト</option>
+                    <option value="soft-light" ${layer.blendMode === 'soft-light' ? 'selected' : ''}>ソフトライト</option>
+                    <option value="difference" ${layer.blendMode === 'difference' ? 'selected' : ''}>差の絶対値</option>
+                    <option value="exclusion" ${layer.blendMode === 'exclusion' ? 'selected' : ''}>除外</option>
+                    <option value="hue" ${layer.blendMode === 'hue' ? 'selected' : ''}>色相</option>
+                    <option value="saturation" ${layer.blendMode === 'saturation' ? 'selected' : ''}>彩度</option>
+                    <option value="color" ${layer.blendMode === 'color' ? 'selected' : ''}>カラー</option>
+                    <option value="luminosity" ${layer.blendMode === 'luminosity' ? 'selected' : ''}>輝度</option>
+                </select>
+            </div>
+        </div>
+    `;
+}
+
+// 親子関係UI生成
+function generateParentUI(layer) {
+    return `
+        <div class="property-group">
+            <h4>🔗 親子関係</h4>
+            <label>親レイヤー: 
+                <select id="prop-parent" onchange="updateLayerProperty('parentLayerId', this.value ? parseInt(this.value) : null)" 
+                    style="width: 100%; padding: 6px; background: var(--biscuit-dark); color: var(--chocolate-dark); border: 1px solid var(--border-color); border-radius: 4px;">
+                    <option value="">なし</option>
+                    ${layers.filter(l => l.id !== layer.id).map(l => {
+                        const icon = l.type === 'folder' ? '📁' : (l.type === 'puppet' ? '🎭' : '🖼️');
+                        return `<option value="${l.id}" ${l.id === layer.parentLayerId ? 'selected' : ''}>${icon} ${l.name}</option>`;
+                    }).join('')}
+                </select>
+            </label>
+        </div>
+    `;
+}
 
 // ===== プロパティパネル更新 =====
 function updatePropertiesPanel() {
+    // ヘッダーツールバーも更新
+    updateHeaderToolbar();
+    
     // 複数選択時
     if (selectedLayerIds.length > 1) {
         propertiesPanel.innerHTML = `
@@ -62,11 +249,10 @@ function updatePropertiesPanel() {
         
         propertiesPanel.innerHTML = `
             <h3>📁 ${layer.name}</h3>
-            <p style="color: var(--biscuit-light); margin-top: 16px; font-size: 11px;">
-                💡 フォルダは親レイヤーとして機能します<br>
-                フォルダを動かすと親がないレイヤーも一緒に動きます<br>
-                ✨ 既存の親子関係は維持されます
-            </p>
+            
+            ${generateTransformUI(layer)}
+            
+            ${generateBlendModeUI(layer)}
             
             <div class="property-group">
                 <h4>🔗 親子関係</h4>
@@ -80,124 +266,9 @@ function updatePropertiesPanel() {
                     }).join('')}
                 </select>
                 <div style="background: rgba(210, 105, 30, 0.2); padding: 8px; margin-top: 8px; border-radius: 4px; font-size: 10px; line-height: 1.4; color: var(--biscuit-light);">
-                    💡 フォルダを別のフォルダの子に設定できます<br>
-                    📁 親フォルダを動かすと、このフォルダも一緒に動きます
-                </div>
-            </div>
-            
-            <div class="property-group">
-                <h4>📍 トランスフォーム</h4>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        X: <span id="transformXValue">${layer.x.toFixed(0)}</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.x}" 
-                            min="-2000" max="2000" step="1"
-                            oninput="document.getElementById(\'transformXValue\').textContent = this.value; if(this.nextElementSibling) this.nextElementSibling.value = this.value; updateLayerPropertyLive(\'x\', parseFloat(this.value))"
-                            onchange="updateLayerProperty('x', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.x.toFixed(0)}" 
-                            onchange="updateLayerProperty('x', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        Y: <span id="transformYValue">${layer.y.toFixed(0)}</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.y}" 
-                            min="-2000" max="2000" step="1"
-                            oninput="document.getElementById(\'transformYValue\').textContent = this.value; if(this.nextElementSibling) this.nextElementSibling.value = this.value; updateLayerPropertyLive(\'y\', parseFloat(this.value))"
-                            onchange="updateLayerProperty('y', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.y.toFixed(0)}" 
-                            onchange="updateLayerProperty('y', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        回転: <span id="transformRotValue">${layer.rotation.toFixed(1)}°</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.rotation}" 
-                            min="-360" max="360" step="0.1"
-                            oninput="document.getElementById('transformRotValue').textContent = parseFloat(this.value).toFixed(1) + '°'; updateLayerPropertyLive('rotation', parseFloat(this.value))"
-                            onchange="updateLayerProperty('rotation', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.rotation.toFixed(1)}" step="0.1"
-                            onchange="updateLayerProperty('rotation', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        スケール: <span id="transformScaleValue">${layer.scale.toFixed(2)}</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.scale}" 
-                            min="0.1" max="3" step="0.01"
-                            oninput="document.getElementById('transformScaleValue').textContent = parseFloat(this.value).toFixed(2); updateLayerPropertyLive('scale', parseFloat(this.value))"
-                            onchange="updateLayerProperty('scale', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.scale.toFixed(2)}" step="0.01"
-                            onchange="updateLayerProperty('scale', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 0;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        不透明度: <span id="transformOpacityValue">${(layer.opacity * 100).toFixed(0)}%</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.opacity}" 
-                            min="0" max="1" step="0.01"
-                            oninput="document.getElementById('transformOpacityValue').textContent = (parseFloat(this.value) * 100).toFixed(0) + '%'; updateLayerPropertyLive('opacity', parseFloat(this.value))"
-                            onchange="updateLayerProperty('opacity', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${(layer.opacity * 100).toFixed(0)}" step="1" min="0" max="100"
-                            onchange="updateLayerProperty('opacity', parseFloat(this.value) / 100); updatePropertiesPanel()">
-                    </div>
-                </div>
-            </div>
-            
-            <div class="property-group">
-                <h4>🎨 ブレンド</h4>
-                <div style="margin-bottom: 0;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">ブレンドモード</label>
-                    <select onchange="updateLayerProperty('blendMode', this.value); updatePropertiesPanel()" 
-                        style="width: 100%; padding: 6px; background: var(--biscuit-dark); color: var(--chocolate-dark); border: 1px solid var(--border-color); border-radius: 4px;">
-                        <option value="source-over" ${layer.blendMode === 'source-over' ? 'selected' : ''}>通常</option>
-                        <option value="multiply" ${layer.blendMode === 'multiply' ? 'selected' : ''}>乗算</option>
-                        <option value="screen" ${layer.blendMode === 'screen' ? 'selected' : ''}>スクリーン</option>
-                        <option value="overlay" ${layer.blendMode === 'overlay' ? 'selected' : ''}>オーバーレイ</option>
-                        <option value="darken" ${layer.blendMode === 'darken' ? 'selected' : ''}>比較(暗)</option>
-                        <option value="lighten" ${layer.blendMode === 'lighten' ? 'selected' : ''}>比較(明)</option>
-                        <option value="color-dodge" ${layer.blendMode === 'color-dodge' ? 'selected' : ''}>覆い焼きカラー</option>
-                        <option value="color-burn" ${layer.blendMode === 'color-burn' ? 'selected' : ''}>焼き込みカラー</option>
-                        <option value="hard-light" ${layer.blendMode === 'hard-light' ? 'selected' : ''}>ハードライト</option>
-                        <option value="soft-light" ${layer.blendMode === 'soft-light' ? 'selected' : ''}>ソフトライト</option>
-                        <option value="difference" ${layer.blendMode === 'difference' ? 'selected' : ''}>差の絶対値</option>
-                        <option value="exclusion" ${layer.blendMode === 'exclusion' ? 'selected' : ''}>除外</option>
-                        <option value="hue" ${layer.blendMode === 'hue' ? 'selected' : ''}>色相</option>
-                        <option value="saturation" ${layer.blendMode === 'saturation' ? 'selected' : ''}>彩度</option>
-                        <option value="color" ${layer.blendMode === 'color' ? 'selected' : ''}>カラー</option>
-                        <option value="luminosity" ${layer.blendMode === 'luminosity' ? 'selected' : ''}>輝度</option>
-                    </select>
-                </div>
-            </div>
-            
-            <div class="property-group">
-                <h4>🛠️ 操作ツール</h4>
-                <div style="display: flex; gap: 8px;">
-                    <button id="tool-rotation" onclick="toggleTool('rotation')" style="flex: 1; padding: 12px; background: linear-gradient(135deg, var(--biscuit-dark), var(--biscuit-medium)); color: var(--chocolate-dark); border: 2px solid var(--border-color); border-radius: 6px; cursor: pointer; font-weight: bold; transition: all 0.3s;">
-                        🔁 回転ハンドル
-                    </button>
-                    <button id="tool-position" onclick="toggleTool('position')" style="flex: 1; padding: 12px; background: linear-gradient(135deg, var(--biscuit-dark), var(--biscuit-medium)); color: var(--chocolate-dark); border: 2px solid var(--border-color); border-radius: 6px; cursor: pointer; font-weight: bold; transition: all 0.3s;">
-                        👇 ポジション
-                    </button>
-                </div>
-                <div style="background: rgba(210, 105, 30, 0.2); padding: 8px; margin-top: 8px; border-radius: 4px; font-size: 10px; line-height: 1.4; color: var(--biscuit-light);">
-                    💡 ツールを選択してキャンバスをドラッグ<br>
-                    📁 フォルダを動かすと中のレイヤーも一緒に動きます
+                    💡 フォルダは親レイヤーとして機能します<br>
+                    📁 フォルダを動かすと中のレイヤーも一緒に動きます<br>
+                    ✨ 既存の親子関係は維持されます
                 </div>
             </div>
             
@@ -215,170 +286,13 @@ function updatePropertiesPanel() {
     propertiesPanel.innerHTML = `
         <h3>${layer.name}</h3>
         
-        <div class="property-group">
-            <h4>📍 トランスフォーム</h4>
-            
-            <div style="margin-bottom: 12px;">
-                <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                    X: <span id="transformXValue">${layer.x.toFixed(0)}</span>
-                </label>
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <input type="range" class="property-slider" style="flex: 1;" value="${layer.x}" 
-                        min="-2000" max="2000" step="1"
-                        oninput="document.getElementById(\'transformXValue\').textContent = this.value; if(this.nextElementSibling) this.nextElementSibling.value = this.value; updateLayerPropertyLive(\'x\', parseFloat(this.value))"
-                        onchange="updateLayerProperty('x', parseFloat(this.value))">
-                    <input type="number" style="width: 80px;" value="${layer.x.toFixed(0)}" 
-                        onchange="updateLayerProperty('x', parseFloat(this.value)); updatePropertiesPanel()">
-                </div>
-            </div>
-            
-            <div style="margin-bottom: 12px;">
-                <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                    Y: <span id="transformYValue">${layer.y.toFixed(0)}</span>
-                </label>
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <input type="range" class="property-slider" style="flex: 1;" value="${layer.y}" 
-                        min="-2000" max="2000" step="1"
-                        oninput="document.getElementById(\'transformYValue\').textContent = this.value; if(this.nextElementSibling) this.nextElementSibling.value = this.value; updateLayerPropertyLive(\'y\', parseFloat(this.value))"
-                        onchange="updateLayerProperty('y', parseFloat(this.value))">
-                    <input type="number" style="width: 80px;" value="${layer.y.toFixed(0)}" 
-                        onchange="updateLayerProperty('y', parseFloat(this.value)); updatePropertiesPanel()">
-                </div>
-            </div>
-            
-            <div style="margin-bottom: 12px;">
-                <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                    回転: <span id="transformRotValue">${layer.rotation.toFixed(1)}°</span>
-                </label>
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <input type="range" class="property-slider" style="flex: 1;" value="${layer.rotation}" 
-                        min="-360" max="360" step="0.1"
-                        oninput="document.getElementById('transformRotValue').textContent = parseFloat(this.value).toFixed(1) + '°'; updateLayerPropertyLive('rotation', parseFloat(this.value))"
-                        onchange="updateLayerProperty('rotation', parseFloat(this.value))">
-                    <input type="number" style="width: 80px;" value="${layer.rotation.toFixed(1)}" step="0.1"
-                        onchange="updateLayerProperty('rotation', parseFloat(this.value)); updatePropertiesPanel()">
-                </div>
-            </div>
-            
-            <div style="margin-bottom: 12px;">
-                <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                    スケール: <span id="transformScaleValue">${layer.scale.toFixed(2)}</span>
-                </label>
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <input type="range" class="property-slider" style="flex: 1;" value="${layer.scale}" 
-                        min="0.1" max="3" step="0.01"
-                        oninput="document.getElementById('transformScaleValue').textContent = parseFloat(this.value).toFixed(2); updateLayerPropertyLive('scale', parseFloat(this.value))"
-                        onchange="updateLayerProperty('scale', parseFloat(this.value))">
-                    <input type="number" style="width: 80px;" value="${layer.scale.toFixed(2)}" step="0.01"
-                        onchange="updateLayerProperty('scale', parseFloat(this.value)); updatePropertiesPanel()">
-                </div>
-            </div>
-            
-            <div style="margin-bottom: 0;">
-                <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                    不透明度: <span id="transformOpacityValue">${(layer.opacity * 100).toFixed(0)}%</span>
-                </label>
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <input type="range" class="property-slider" style="flex: 1;" value="${layer.opacity}" 
-                        min="0" max="1" step="0.01"
-                        oninput="document.getElementById('transformOpacityValue').textContent = (parseFloat(this.value) * 100).toFixed(0) + '%'; updateLayerPropertyLive('opacity', parseFloat(this.value))"
-                        onchange="updateLayerProperty('opacity', parseFloat(this.value))">
-                    <input type="number" style="width: 80px;" value="${(layer.opacity * 100).toFixed(0)}" step="1" min="0" max="100"
-                        onchange="updateLayerProperty('opacity', parseFloat(this.value) / 100); updatePropertiesPanel()">
-                </div>
-            </div>
-        </div>
+        ${generateTransformUI(layer)}
         
-        <div class="property-group">
-            <h4>🎨 ブレンド</h4>
-            <div style="margin-bottom: 0;">
-                <label style="font-size: 11px; display: block; margin-bottom: 4px;">ブレンドモード</label>
-                <select onchange="updateLayerProperty('blendMode', this.value); updatePropertiesPanel()" 
-                    style="width: 100%; padding: 6px; background: var(--biscuit-dark); color: var(--chocolate-dark); border: 1px solid var(--border-color); border-radius: 4px;">
-                    <option value="source-over" ${layer.blendMode === 'source-over' ? 'selected' : ''}>通常</option>
-                    <option value="multiply" ${layer.blendMode === 'multiply' ? 'selected' : ''}>乗算</option>
-                    <option value="screen" ${layer.blendMode === 'screen' ? 'selected' : ''}>スクリーン</option>
-                    <option value="overlay" ${layer.blendMode === 'overlay' ? 'selected' : ''}>オーバーレイ</option>
-                    <option value="darken" ${layer.blendMode === 'darken' ? 'selected' : ''}>比較(暗)</option>
-                    <option value="lighten" ${layer.blendMode === 'lighten' ? 'selected' : ''}>比較(明)</option>
-                    <option value="color-dodge" ${layer.blendMode === 'color-dodge' ? 'selected' : ''}>覆い焼きカラー</option>
-                    <option value="color-burn" ${layer.blendMode === 'color-burn' ? 'selected' : ''}>焼き込みカラー</option>
-                    <option value="hard-light" ${layer.blendMode === 'hard-light' ? 'selected' : ''}>ハードライト</option>
-                    <option value="soft-light" ${layer.blendMode === 'soft-light' ? 'selected' : ''}>ソフトライト</option>
-                    <option value="difference" ${layer.blendMode === 'difference' ? 'selected' : ''}>差の絶対値</option>
-                    <option value="exclusion" ${layer.blendMode === 'exclusion' ? 'selected' : ''}>除外</option>
-                    <option value="hue" ${layer.blendMode === 'hue' ? 'selected' : ''}>色相</option>
-                    <option value="saturation" ${layer.blendMode === 'saturation' ? 'selected' : ''}>彩度</option>
-                    <option value="color" ${layer.blendMode === 'color' ? 'selected' : ''}>カラー</option>
-                    <option value="luminosity" ${layer.blendMode === 'luminosity' ? 'selected' : ''}>輝度</option>
-                </select>
-            </div>
-        </div>
-        
-        <div class="property-group">
-            <h4>🛠️ 操作ツール</h4>
-            <div style="display: flex; gap: 8px;">
-                <button id="tool-rotation" onclick="toggleTool('rotation')" style="flex: 1; padding: 12px; background: linear-gradient(135deg, var(--biscuit-dark), var(--biscuit-medium)); color: var(--chocolate-dark); border: 2px solid var(--border-color); border-radius: 6px; cursor: pointer; font-weight: bold; transition: all 0.3s;">
-                    🔁 回転ハンドル
-                </button>
-                <button id="tool-position" onclick="toggleTool('position')" style="flex: 1; padding: 12px; background: linear-gradient(135deg, var(--biscuit-dark), var(--biscuit-medium)); color: var(--chocolate-dark); border: 2px solid var(--border-color); border-radius: 6px; cursor: pointer; font-weight: bold; transition: all 0.3s;">
-                    👇 ポジション
-                </button>
-            </div>
-            <div style="background: rgba(210, 105, 30, 0.2); padding: 8px; margin-top: 8px; border-radius: 4px; font-size: 10px; line-height: 1.4; color: var(--biscuit-light);">
-                💡 ツールを選択してキャンバスをドラッグ<br>
-                🔁 回転: アンカーを中心に回転<br>
-                👇 ポジション: 画像を移動<br>
-                🔄 2回クリックでツール解除
-            </div>
-        </div>
-        
-        <div class="property-group">
-            <h4>⚓ アンカーポイント</h4>
-            <div style="display: flex; gap: 8px;">
-                <button onclick="startAnchorPointPick()" style="flex: 1; padding: 8px; background: var(--accent-orange); color: white; border: none; border-radius: 4px; cursor: pointer;">
-                    🎯 クリックで設定
-                </button>
-                <button onclick="resetAnchorPoint()" style="flex: 1; padding: 8px; background: var(--chocolate-dark); color: white; border: none; border-radius: 4px; cursor: pointer;">
-                    ↩️ 中央に戻す
-                </button>
-            </div>
-            <div style="display: flex; gap: 8px; margin-top: 8px;">
-                <div style="flex: 1;">
-                    <label style="font-size: 11px;">X: <span id="anchorXValue">${(layer.anchorX * 100).toFixed(0)}%</span></label>
-                    <input type="range" class="property-slider" value="${(layer.anchorX * 100).toFixed(0)}" 
-                        min="0" max="100" step="1"
-                        oninput="document.getElementById('anchorXValue').textContent = this.value + '%'; setAnchorPointLive('x', parseFloat(this.value) / 100)"
-                        onchange="setAnchorPoint('x', parseFloat(this.value) / 100)">
-                </div>
-                <div style="flex: 1;">
-                    <label style="font-size: 11px;">Y: <span id="anchorYValue">${(layer.anchorY * 100).toFixed(0)}%</span></label>
-                    <input type="range" class="property-slider" value="${(layer.anchorY * 100).toFixed(0)}" 
-                        min="0" max="100" step="1"
-                        oninput="document.getElementById('anchorYValue').textContent = this.value + '%'; setAnchorPointLive('y', parseFloat(this.value) / 100)"
-                        onchange="setAnchorPoint('y', parseFloat(this.value) / 100)">
-                </div>
-            </div>
-            <div style="background: rgba(210, 105, 30, 0.2); padding: 8px; margin-top: 8px; border-radius: 4px; font-size: 10px; line-height: 1.4; color: var(--biscuit-light);">
-                💡 トランスフォーム（回転・スケール）の基準となる点です<br>
-                🎯 クリック設定: キャンバスをクリックして関節位置に設定<br>
-                ✚ 赤い十字マークが常に表示されます
-            </div>
-        </div>
+        ${generateBlendModeUI(layer)}
         
         ${generatePuppetFollowUI(layer)}
         
-        <div class="property-group">
-            <h4>🔗 親子関係</h4>
-            <label>親レイヤー: 
-                <select id="prop-parent" onchange="updateLayerProperty('parentLayerId', this.value ? parseInt(this.value) : null)">
-                    <option value="">なし</option>
-                    ${layers.filter(l => l.id !== layer.id).map(l => 
-                        `<option value="${l.id}" ${l.id === layer.parentLayerId ? 'selected' : ''}>${l.name}</option>`
-                    ).join('')}
-                </select>
-            </label>
-        </div>
+        ${generateParentUI(layer)}
         
         <div class="property-group">
             <h4>🎭 色抜きクリッピング</h4>
@@ -461,65 +375,9 @@ function updatePropertiesPanel() {
         propertiesPanel.innerHTML = `
             <h3>💬 ${layer.name}</h3>
             
-            <div class="property-group">
-                <h4>📍 トランスフォーム</h4>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        X: <span id="transformXValue">${layer.x.toFixed(0)}</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.x}" 
-                            min="-2000" max="2000" step="1"
-                            oninput="document.getElementById(\'transformXValue\').textContent = this.value; if(this.nextElementSibling) this.nextElementSibling.value = this.value; updateLayerPropertyLive(\'x\', parseFloat(this.value))"
-                            onchange="updateLayerProperty('x', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.x.toFixed(0)}" 
-                            onchange="updateLayerProperty('x', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        Y: <span id="transformYValue">${layer.y.toFixed(0)}</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.y}" 
-                            min="-2000" max="2000" step="1"
-                            oninput="document.getElementById(\'transformYValue\').textContent = this.value; if(this.nextElementSibling) this.nextElementSibling.value = this.value; updateLayerPropertyLive(\'y\', parseFloat(this.value))"
-                            onchange="updateLayerProperty('y', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.y.toFixed(0)}" 
-                            onchange="updateLayerProperty('y', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        回転: <span id="transformRotValue">${layer.rotation.toFixed(1)}°</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.rotation}" 
-                            min="-360" max="360" step="0.1"
-                            oninput="document.getElementById('transformRotValue').textContent = parseFloat(this.value).toFixed(1) + '°'; updateLayerPropertyLive('rotation', parseFloat(this.value))"
-                            onchange="updateLayerProperty('rotation', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.rotation.toFixed(1)}" step="0.1"
-                            onchange="updateLayerProperty('rotation', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 0;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        スケール: <span id="transformScaleValue">${layer.scale.toFixed(2)}</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.scale}" 
-                            min="0.1" max="3" step="0.01"
-                            oninput="document.getElementById('transformScaleValue').textContent = parseFloat(this.value).toFixed(2); updateLayerPropertyLive('scale', parseFloat(this.value))"
-                            onchange="updateLayerProperty('scale', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.scale.toFixed(2)}" step="0.01"
-                            onchange="updateLayerProperty('scale', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-            </div>
+            ${generateTransformUI(layer)}
+            
+            ${generateBlendModeUI(layer)}
             
             <div class="property-group">
                 <h4>💬 口パク制御</h4>
@@ -562,42 +420,9 @@ function updatePropertiesPanel() {
                 </div>
             </div>
             
-            <div class="property-group">
-                <h4>⚙️ アンカーポイント</h4>
-                <p style="font-size: 11px; color: var(--biscuit-light); margin-bottom: 8px;">
-                    回転・スケールの中心点（赤い十字）
-                </p>
-                
-                <div style="margin-bottom: 8px;">
-                    <label>X: ${(layer.anchorX * 100).toFixed(0)}%</label>
-                    <input type="range" class="property-slider" value="${layer.anchorX}" 
-                        min="0" max="1" step="0.01"
-                        oninput="setAnchorPointLive('x', parseFloat(this.value)); document.querySelector('#properties-panel label').textContent = 'X: ' + (parseFloat(this.value) * 100).toFixed(0) + '%'"
-                        onchange="setAnchorPoint('x', parseFloat(this.value)); updatePropertiesPanel()">
-                </div>
-                
-                <div style="margin-bottom: 8px;">
-                    <label>Y: ${(layer.anchorY * 100).toFixed(0)}%</label>
-                    <input type="range" class="property-slider" value="${layer.anchorY}" 
-                        min="0" max="1" step="0.01"
-                        oninput="setAnchorPointLive('y', parseFloat(this.value)); document.querySelectorAll('#properties-panel label')[1].textContent = 'Y: ' + (parseFloat(this.value) * 100).toFixed(0) + '%'"
-                        onchange="setAnchorPoint('y', parseFloat(this.value)); updatePropertiesPanel()">
-                </div>
-            </div>
-            
             ${generatePuppetFollowUI(layer)}
             
-            <div class="property-group">
-                <h4>👪 親レイヤー</h4>
-                <label>親レイヤー: 
-                    <select id="prop-parent" onchange="updateLayerProperty('parentLayerId', this.value ? parseInt(this.value) : null)">
-                        <option value="">なし</option>
-                        ${layers.filter(l => l.id !== layer.id).map(l => 
-                            `<option value="${l.id}" ${l.id === layer.parentLayerId ? 'selected' : ''}>${l.name}</option>`
-                        ).join('')}
-                    </select>
-                </label>
-            </div>
+            ${generateParentUI(layer)}
         `;
         
         clearPinElements();
@@ -609,65 +434,9 @@ function updatePropertiesPanel() {
         propertiesPanel.innerHTML = `
             <h3>👀 ${layer.name}</h3>
             
-            <div class="property-group">
-                <h4>📍 トランスフォーム</h4>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        X: <span id="transformXValue">${layer.x.toFixed(0)}</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.x}" 
-                            min="-2000" max="2000" step="1"
-                            oninput="document.getElementById(\'transformXValue\').textContent = this.value; if(this.nextElementSibling) this.nextElementSibling.value = this.value; updateLayerPropertyLive(\'x\', parseFloat(this.value))"
-                            onchange="updateLayerProperty('x', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.x.toFixed(0)}" 
-                            onchange="updateLayerProperty('x', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        Y: <span id="transformYValue">${layer.y.toFixed(0)}</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.y}" 
-                            min="-2000" max="2000" step="1"
-                            oninput="document.getElementById(\'transformYValue\').textContent = this.value; if(this.nextElementSibling) this.nextElementSibling.value = this.value; updateLayerPropertyLive(\'y\', parseFloat(this.value))"
-                            onchange="updateLayerProperty('y', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.y.toFixed(0)}" 
-                            onchange="updateLayerProperty('y', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        回転: <span id="transformRotValue">${layer.rotation.toFixed(1)}°</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.rotation}" 
-                            min="-360" max="360" step="0.1"
-                            oninput="document.getElementById('transformRotValue').textContent = parseFloat(this.value).toFixed(1) + '°'; updateLayerPropertyLive('rotation', parseFloat(this.value))"
-                            onchange="updateLayerProperty('rotation', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.rotation.toFixed(1)}" step="0.1"
-                            onchange="updateLayerProperty('rotation', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 0;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        スケール: <span id="transformScaleValue">${layer.scale.toFixed(2)}</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.scale}" 
-                            min="0.1" max="3" step="0.01"
-                            oninput="document.getElementById('transformScaleValue').textContent = parseFloat(this.value).toFixed(2); updateLayerPropertyLive('scale', parseFloat(this.value))"
-                            onchange="updateLayerProperty('scale', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.scale.toFixed(2)}" step="0.01"
-                            onchange="updateLayerProperty('scale', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-            </div>
+            ${generateTransformUI(layer)}
+            
+            ${generateBlendModeUI(layer)}
             
             <div class="property-group">
                 <h4>👀 まばたき制御</h4>
@@ -707,42 +476,9 @@ function updatePropertiesPanel() {
                 </div>
             </div>
             
-            <div class="property-group">
-                <h4>⚙️ アンカーポイント</h4>
-                <p style="font-size: 11px; color: var(--biscuit-light); margin-bottom: 8px;">
-                    回転・スケールの中心点（赤い十字）
-                </p>
-                
-                <div style="margin-bottom: 8px;">
-                    <label>X: ${(layer.anchorX * 100).toFixed(0)}%</label>
-                    <input type="range" class="property-slider" value="${layer.anchorX}" 
-                        min="0" max="1" step="0.01"
-                        oninput="setAnchorPointLive('x', parseFloat(this.value)); document.querySelector('#properties-panel label').textContent = 'X: ' + (parseFloat(this.value) * 100).toFixed(0) + '%'"
-                        onchange="setAnchorPoint('x', parseFloat(this.value)); updatePropertiesPanel()">
-                </div>
-                
-                <div style="margin-bottom: 8px;">
-                    <label>Y: ${(layer.anchorY * 100).toFixed(0)}%</label>
-                    <input type="range" class="property-slider" value="${layer.anchorY}" 
-                        min="0" max="1" step="0.01"
-                        oninput="setAnchorPointLive('y', parseFloat(this.value)); document.querySelectorAll('#properties-panel label')[1].textContent = 'Y: ' + (parseFloat(this.value) * 100).toFixed(0) + '%'"
-                        onchange="setAnchorPoint('y', parseFloat(this.value)); updatePropertiesPanel()">
-                </div>
-            </div>
-            
             ${generatePuppetFollowUI(layer)}
             
-            <div class="property-group">
-                <h4>👪 親レイヤー</h4>
-                <label>親レイヤー: 
-                    <select id="prop-parent" onchange="updateLayerProperty('parentLayerId', this.value ? parseInt(this.value) : null)">
-                        <option value="">なし</option>
-                        ${layers.filter(l => l.id !== layer.id).map(l => 
-                            `<option value="${l.id}" ${l.id === layer.parentLayerId ? 'selected' : ''}>${l.name}</option>`
-                        ).join('')}
-                    </select>
-                </label>
-            </div>
+            ${generateParentUI(layer)}
         `;
         
         clearPinElements();
@@ -773,125 +509,19 @@ function updatePropertiesPanel() {
         propertiesPanel.innerHTML = `
             <h3>🎈 ${layer.name}</h3>
             
-            <div class="property-group">
-                <h4>🛠️ 操作ツール</h4>
-                <div style="display: flex; gap: 8px;">
-                    <button id="tool-rotation" onclick="toggleTool('rotation')" style="flex: 1; padding: 12px; background: linear-gradient(135deg, var(--biscuit-dark), var(--biscuit-medium)); color: var(--chocolate-dark); border: 2px solid var(--border-color); border-radius: 6px; cursor: pointer; font-weight: bold; transition: all 0.3s;">
-                        🔁 回転ハンドル
-                    </button>
-                    <button id="tool-position" onclick="toggleTool('position')" style="flex: 1; padding: 12px; background: linear-gradient(135deg, var(--biscuit-dark), var(--biscuit-medium)); color: var(--chocolate-dark); border: 2px solid var(--border-color); border-radius: 6px; cursor: pointer; font-weight: bold; transition: all 0.3s;">
-                        👇 ポジション
-                    </button>
-                </div>
-                <div style="background: rgba(210, 105, 30, 0.2); padding: 8px; margin-top: 8px; border-radius: 4px; font-size: 10px; line-height: 1.4; color: var(--biscuit-light);">
-                    💡 ツールを選択してキャンバスをドラッグ<br>
-                    🔁 回転ハンドル: レイヤーを回転<br>
-                    👇 ポジション: 位置を変更<br>
-                    ⚠️ X軸クリックで別ツール解除
-                </div>
-            </div>
+            ${generateTransformUI(layer)}
             
-            <div class="property-group">
-                <h4>📍 トランスフォーム</h4>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        X: <span id="transformXValue">${layer.x.toFixed(0)}</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.x}" 
-                            min="-2000" max="2000" step="1"
-                            oninput="document.getElementById(\'transformXValue\').textContent = this.value; if(this.nextElementSibling) this.nextElementSibling.value = this.value; updateLayerPropertyLive(\'x\', parseFloat(this.value))"
-                            onchange="updateLayerProperty('x', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.x.toFixed(0)}" 
-                            onchange="updateLayerProperty('x', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        Y: <span id="transformYValue">${layer.y.toFixed(0)}</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.y}" 
-                            min="-2000" max="2000" step="1"
-                            oninput="document.getElementById(\'transformYValue\').textContent = this.value; if(this.nextElementSibling) this.nextElementSibling.value = this.value; updateLayerPropertyLive(\'y\', parseFloat(this.value))"
-                            onchange="updateLayerProperty('y', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.y.toFixed(0)}" 
-                            onchange="updateLayerProperty('y', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        回転: <span id="transformRotValue">${layer.rotation.toFixed(1)}°</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.rotation}" 
-                            min="-360" max="360" step="0.1"
-                            oninput="document.getElementById('transformRotValue').textContent = parseFloat(this.value).toFixed(1) + '°'; updateLayerPropertyLive('rotation', parseFloat(this.value))"
-                            onchange="updateLayerProperty('rotation', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.rotation.toFixed(1)}" step="0.1"
-                            onchange="updateLayerProperty('rotation', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 0;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        スケール: <span id="transformScaleValue">${layer.scale.toFixed(2)}</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.scale}" 
-                            min="0.1" max="3" step="0.01"
-                            oninput="document.getElementById('transformScaleValue').textContent = parseFloat(this.value).toFixed(2); updateLayerPropertyLive('scale', parseFloat(this.value))"
-                            onchange="updateLayerProperty('scale', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.scale.toFixed(2)}" step="0.01"
-                            onchange="updateLayerProperty('scale', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-            </div>
-            
-            <div class="property-group">
-                <h4>⚓ アンカーポイント（変形の軸）</h4>
-                <p style="font-size: 11px; color: var(--biscuit-light); margin-bottom: 8px;">
-                    ⭐ <strong>アンカーが変形の軸になります！</strong><br>
-                    🎯 アンカーポイントに向かって画像が伸縮します<br>
-                    💡 例：上に弾ませたいなら、アンカーを上に配置<br>
-                    ✨ <strong>いつでも何度でも位置を変更できます</strong>
-                </p>
-                <div style="background: rgba(255, 215, 0, 0.15); padding: 8px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid var(--accent-gold);">
-                    <div style="font-size: 11px; color: var(--biscuit-light);">
-                        📍 現在のアンカー位置: <strong style="color: var(--accent-gold);">X ${(layer.anchorX * 100).toFixed(0)}%, Y ${(layer.anchorY * 100).toFixed(0)}%</strong>
-                    </div>
-                </div>
-                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-                    <button onclick="setAnchorPointClick()" id="tool-anchor" style="flex: 1; padding: 10px; background: linear-gradient(135deg, var(--accent-gold), #ff8c00); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px; box-shadow: 0 2px 8px rgba(255, 215, 0, 0.3); transition: all 0.3s;">
-                        🎯 クリックで位置変更
-                    </button>
-                    <button onclick="resetAnchorPoint()" style="flex: 1; padding: 10px; background: var(--chocolate-dark); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 11px;">
-                        ↩️ 中央に戻す
-                    </button>
-                </div>
-                <div style="display: flex; gap: 8px; margin-top: 8px;">
-                    <div style="flex: 1;">
-                        <label style="font-size: 11px;">X: <span id="anchorXValue">${(layer.anchorX * 100).toFixed(0)}%</span></label>
-                        <input type="range" class="property-slider" value="${(layer.anchorX * 100).toFixed(0)}" 
-                            min="0" max="100" step="1"
-                            oninput="document.getElementById('anchorXValue').textContent = this.value + '%'; setAnchorPointLive('x', parseFloat(this.value) / 100)"
-                            onchange="setAnchorPoint('x', parseFloat(this.value) / 100)">
-                    </div>
-                    <div style="flex: 1;">
-                        <label style="font-size: 11px;">Y: <span id="anchorYValue">${(layer.anchorY * 100).toFixed(0)}%</span></label>
-                        <input type="range" class="property-slider" value="${(layer.anchorY * 100).toFixed(0)}" 
-                            min="0" max="100" step="1"
-                            oninput="document.getElementById('anchorYValue').textContent = this.value + '%'; setAnchorPointLive('y', parseFloat(this.value) / 100)"
-                            onchange="setAnchorPoint('y', parseFloat(this.value) / 100)">
-                    </div>
-                </div>
-            </div>
+            ${generateBlendModeUI(layer)}
             
             <div class="property-group">
                 <h4>🎈 揺れモーション制御</h4>
+                
+                <div style="background: rgba(255, 215, 0, 0.15); padding: 8px; border-radius: 4px; margin-bottom: 12px; border-left: 3px solid var(--accent-gold);">
+                    <div style="font-size: 11px; color: var(--biscuit-light);">
+                        ⭐ <strong>ヘッダーのアンカー設定が変形の軸になります！</strong><br>
+                        🎯 アンカーポイントに向かって画像が伸縮します
+                    </div>
+                </div>
                 
                 <div style="margin-bottom: 12px;">
                     <label style="font-size: 11px; display: block; margin-bottom: 4px;">アニメーションタイプ</label>
@@ -1005,26 +635,13 @@ function updatePropertiesPanel() {
                     💡 <strong>弾み</strong> = Y軸伸縮のみ<br>
                     🌊 <strong>揺れ</strong> = 横揺れのみ（減衰あり）<br>
                     📍 <strong>ピン</strong> = 揺れを固定・抑制する箇所を配置<br>
-                    ⚓ <strong>アンカーポイントが変形の軸です！</strong><br>
-                    🎯 弾みタイプはアンカーに向かって伸縮します<br>
-                    🎬 キーフレームで複数回のアニメーション挿入可能<br>
-                    ↔️ 左右の揺れ方向を選択できます
+                    ⚓ <strong>ヘッダーのアンカー設定が変形の軸です！</strong>
                 </div>
             </div>
             
             ${generatePuppetFollowUI(layer)}
             
-            <div class="property-group">
-                <h4>👪 親レイヤー</h4>
-                <label>親レイヤー: 
-                    <select id="prop-parent" onchange="updateLayerProperty('parentLayerId', this.value ? parseInt(this.value) : null)">
-                        <option value="">なし</option>
-                        ${layers.filter(l => l.id !== layer.id).map(l => 
-                            `<option value="${l.id}" ${l.id === layer.parentLayerId ? 'selected' : ''}>${l.name}</option>`
-                        ).join('')}
-                    </select>
-                </label>
-            </div>
+            ${generateParentUI(layer)}
         `;
         
         // キーフレームリストを更新
@@ -1053,8 +670,12 @@ function updatePropertiesPanel() {
         propertiesPanel.innerHTML = `
             <h3>🎭 ${layer.name}</h3>
             
+            ${generateTransformUI(layer)}
+            
+            ${generateBlendModeUI(layer)}
+            
             <div class="property-group">
-                <h4>🛠️ 操作ツール</h4>
+                <h4>🎭 パペットピン操作</h4>
                 <div style="display: flex; gap: 8px; margin-bottom: 8px;">
                     <button onclick="togglePuppetHandleMode()" id="puppet-handle-mode-btn" style="flex: 1; padding: 14px; background: linear-gradient(135deg, #ff8c42, #ffa94d); color: white; border: 2px solid var(--border-color); border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 13px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); transition: all 0.3s;">
                         🎯 ハンドル設定
@@ -1069,134 +690,10 @@ function updatePropertiesPanel() {
                     </button>
                 </div>
                 <p style="font-size: 11px; color: var(--biscuit-light); line-height: 1.4;">
-                    💡 <strong>ハンドル設定</strong>: 最初にクリックで変形用ハンドルを配置<br>
+                    💡 <strong>ハンドル設定</strong>: 変形用ハンドルを配置<br>
                     📍 <strong>中間ピン</strong>: カーブを追加するピンを配置<br>
-                    🔒 <strong>固定ピン</strong>: 変形しない固定点を配置（軸周辺の固定に）<br>
-                    ✨ ハンドル・ピンをドラッグすると自動でキーフレーム登録
+                    🔒 <strong>固定ピン</strong>: 変形しない固定点を配置
                 </p>
-            </div>
-            
-            <div class="property-group">
-                <h4>⚓ アンカーポイント（軸アンカー）</h4>
-                <div style="display: flex; gap: 8px;">
-                    <button onclick="startAnchorPointPick()" style="flex: 1; padding: 8px; background: var(--accent-orange); color: white; border: none; border-radius: 4px; cursor: pointer;">
-                        🎯 クリックで設定
-                    </button>
-                    <button onclick="resetAnchorPoint()" style="flex: 1; padding: 8px; background: var(--chocolate-dark); color: white; border: none; border-radius: 4px; cursor: pointer;">
-                        ↩️ 中央に戻す
-                    </button>
-                </div>
-                <div style="display: flex; gap: 8px; margin-top: 8px;">
-                    <div style="flex: 1;">
-                        <label style="font-size: 11px;">X: <span id="anchorXValue">${(layer.anchorX * 100).toFixed(0)}%</span></label>
-                        <input type="range" class="property-slider" value="${(layer.anchorX * 100).toFixed(0)}" 
-                            min="0" max="100" step="1"
-                            oninput="document.getElementById('anchorXValue').textContent = this.value + '%'; setAnchorPointLive('x', parseFloat(this.value) / 100)"
-                            onchange="setAnchorPoint('x', parseFloat(this.value) / 100)">
-                    </div>
-                    <div style="flex: 1;">
-                        <label style="font-size: 11px;">Y: <span id="anchorYValue">${(layer.anchorY * 100).toFixed(0)}%</span></label>
-                        <input type="range" class="property-slider" value="${(layer.anchorY * 100).toFixed(0)}" 
-                            min="0" max="100" step="1"
-                            oninput="document.getElementById('anchorYValue').textContent = this.value + '%'; setAnchorPointLive('y', parseFloat(this.value) / 100)"
-                            onchange="setAnchorPoint('y', parseFloat(this.value) / 100)">
-                    </div>
-                </div>
-                <div style="background: rgba(210, 105, 30, 0.2); padding: 8px; margin-top: 8px; border-radius: 4px; font-size: 10px; line-height: 1.4; color: var(--biscuit-light);">
-                    💡 パペット変形の軸となる点です（赤い十字で表示）<br>
-                    🎯 クリック設定: キャンバスをクリックして関節位置に設定
-                </div>
-            </div>
-            
-            <div class="property-group">
-                <h4>📍 トランスフォーム</h4>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        X: <span id="transformXValue">${layer.x.toFixed(0)}</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.x}" 
-                            min="-2000" max="2000" step="1"
-                            oninput="document.getElementById('transformXValue').textContent = this.value; updateLayerPropertyLive('x', parseFloat(this.value))"
-                            onchange="updateLayerProperty('x', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.x.toFixed(0)}" 
-                            onchange="updateLayerProperty('x', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        Y: <span id="transformYValue">${layer.y.toFixed(0)}</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.y}" 
-                            min="-2000" max="2000" step="1"
-                            oninput="document.getElementById('transformYValue').textContent = this.value; updateLayerPropertyLive('y', parseFloat(this.value))"
-                            onchange="updateLayerProperty('y', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.y.toFixed(0)}" 
-                            onchange="updateLayerProperty('y', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        回転: <span id="transformRotValue">${layer.rotation.toFixed(1)}°</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.rotation}" 
-                            min="-360" max="360" step="0.1"
-                            oninput="document.getElementById('transformRotValue').textContent = parseFloat(this.value).toFixed(1) + '°'; updateLayerPropertyLive('rotation', parseFloat(this.value))"
-                            onchange="updateLayerProperty('rotation', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.rotation.toFixed(1)}" step="0.1"
-                            onchange="updateLayerProperty('rotation', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        スケール: <span id="transformScaleValue">${layer.scale.toFixed(2)}</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.scale}" 
-                            min="0.1" max="3" step="0.01"
-                            oninput="document.getElementById('transformScaleValue').textContent = parseFloat(this.value).toFixed(2); updateLayerPropertyLive('scale', parseFloat(this.value))"
-                            onchange="updateLayerProperty('scale', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${layer.scale.toFixed(2)}" step="0.01"
-                            onchange="updateLayerProperty('scale', parseFloat(this.value)); updatePropertiesPanel()">
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                        不透明度: <span id="transformOpacityValue">${(layer.opacity * 100).toFixed(0)}%</span>
-                    </label>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" class="property-slider" style="flex: 1;" value="${layer.opacity}" 
-                            min="0" max="1" step="0.01"
-                            oninput="document.getElementById('transformOpacityValue').textContent = Math.round(parseFloat(this.value) * 100) + '%'; updateLayerPropertyLive('opacity', parseFloat(this.value))"
-                            onchange="updateLayerProperty('opacity', parseFloat(this.value))">
-                        <input type="number" style="width: 80px;" value="${(layer.opacity * 100).toFixed(0)}" 
-                            onchange="updateLayerProperty('opacity', parseFloat(this.value) / 100); updatePropertiesPanel()">
-                    </div>
-                </div>
-            </div>
-            
-            <div class="property-group">
-                <h4>🛠️ 操作ツール</h4>
-                <div style="display: flex; gap: 8px;">
-                    <button id="tool-rotation" onclick="toggleTool('rotation')" style="flex: 1; padding: 12px; background: linear-gradient(135deg, var(--biscuit-dark), var(--biscuit-medium)); color: var(--chocolate-dark); border: 2px solid var(--border-color); border-radius: 6px; cursor: pointer; font-weight: bold; transition: all 0.3s;">
-                        🔁 回転ハンドル
-                    </button>
-                    <button id="tool-position" onclick="toggleTool('position')" style="flex: 1; padding: 12px; background: linear-gradient(135deg, var(--biscuit-dark), var(--biscuit-medium)); color: var(--chocolate-dark); border: 2px solid var(--border-color); border-radius: 6px; cursor: pointer; font-weight: bold; transition: all 0.3s;">
-                        👇 ポジション
-                    </button>
-                </div>
-                <div style="background: rgba(210, 105, 30, 0.2); padding: 8px; margin-top: 8px; border-radius: 4px; font-size: 10px; line-height: 1.4; color: var(--biscuit-light);">
-                    💡 ツールを選択してキャンバスをドラッグ<br>
-                    🔁 回転: アンカーを中心に回転<br>
-                    👇 ポジション: 画像を移動
-                </div>
             </div>
             
             <div class="property-group">
@@ -1250,35 +747,7 @@ function updatePropertiesPanel() {
                 <div id="fixed-pins-container"></div>
             </div>
             
-            <div class="property-group">
-                <h4>🎨 表示設定</h4>
-                <label style="font-size: 11px; display: block; margin-bottom: 4px;">
-                    ブレンドモード:
-                    <select onchange="updateLayerProperty('blendMode', this.value)" style="width: 100%; padding: 6px; margin-top: 4px; background: var(--biscuit-dark); color: var(--chocolate-dark); border: 1px solid var(--border-color); border-radius: 4px;">
-                        <option value="source-over" ${layer.blendMode === 'source-over' ? 'selected' : ''}>通常</option>
-                        <option value="multiply" ${layer.blendMode === 'multiply' ? 'selected' : ''}>乗算</option>
-                        <option value="screen" ${layer.blendMode === 'screen' ? 'selected' : ''}>スクリーン</option>
-                        <option value="overlay" ${layer.blendMode === 'overlay' ? 'selected' : ''}>オーバーレイ</option>
-                        <option value="darken" ${layer.blendMode === 'darken' ? 'selected' : ''}>比較(暗)</option>
-                        <option value="lighten" ${layer.blendMode === 'lighten' ? 'selected' : ''}>比較(明)</option>
-                    </select>
-                </label>
-            </div>
-            
-            <div class="property-group">
-                <h4>🔗 親子関係</h4>
-                <label style="font-size: 11px;">
-                    親レイヤー:
-                    <select onchange="updateLayerProperty('parentLayerId', this.value === 'none' ? null : parseInt(this.value))" style="width: 100%; padding: 6px; margin-top: 4px; background: var(--biscuit-dark); color: var(--chocolate-dark); border: 1px solid var(--border-color); border-radius: 4px;">
-                        <option value="none" ${!layer.parentLayerId ? 'selected' : ''}>なし</option>
-                        ${layers
-                            .filter(l => l.id !== layer.id && l.type !== 'folder')
-                            .map(l => 
-                                `<option value="${l.id}" ${l.id === layer.parentLayerId ? 'selected' : ''}>${l.name}</option>`
-                            ).join('')}
-                    </select>
-                </label>
-            </div>
+            ${generateParentUI(layer)}
         `;
         
         // 中間ピンリストを更新
@@ -1300,6 +769,23 @@ function updatePropertiesPanel() {
         // ツールボタン状態を更新
         updateToolButtons();
         
+        return;
+    }
+    
+    // 音声レイヤーの場合
+    if (layer.type === 'audio') {
+        // 音声プロパティUIを生成（app-audio.jsで定義）
+        if (typeof generateAudioPropertiesUI === 'function') {
+            propertiesPanel.innerHTML = `
+                <h3>🎵 ${layer.name}</h3>
+                ${generateAudioPropertiesUI(layer)}
+            `;
+        } else {
+            propertiesPanel.innerHTML = `
+                <h3>🎵 ${layer.name}</h3>
+                <p style="color: var(--biscuit-light);">音声レイヤーです</p>
+            `;
+        }
         return;
     }
 }
@@ -1809,37 +1295,39 @@ function startAnchorPointPick() {
         const localX = offsetX * cos - offsetY * sin;
         const localY = offsetX * sin + offsetY * cos;
         
-        // パペットレイヤーの場合は画像サイズを使用
-        const layerWidth = layer.type === 'puppet' ? layer.img.width : layer.width;
-        const layerHeight = layer.type === 'puppet' ? layer.img.height : layer.height;
+        // フォルダの場合はピクセルオフセットとして直接保存
+        if (layer.type === 'folder') {
+            layer.anchorOffsetX = localX;
+            layer.anchorOffsetY = localY;
+            
+            // モードを解除
+            anchorPointPickMode = false;
+            canvas.style.cursor = 'default';
+            canvas.removeEventListener('click', anchorPointClickHandler);
+            anchorPointClickHandler = null;
+            
+            updatePropertiesPanel();
+            render();
+            return;
+        }
         
-        // 古いアンカーポイントを保存
-        const oldAnchorX = layer.anchorX;
-        const oldAnchorY = layer.anchorY;
+        // 画像レイヤーの場合はサイズを取得
+        let layerWidth, layerHeight;
+        if (layer.type === 'puppet') {
+            layerWidth = layer.img.width;
+            layerHeight = layer.img.height;
+        } else {
+            layerWidth = layer.width;
+            layerHeight = layer.height;
+        }
         
         // 0-1の範囲に変換
         const newAnchorX = Math.max(0, Math.min(1, (localX + layerWidth / 2) / layerWidth));
         const newAnchorY = Math.max(0, Math.min(1, (localY + layerHeight / 2) / layerHeight));
         
-        // アンカーポイントの変化量を計算
-        const anchorDeltaX = (newAnchorX - oldAnchorX) * layerWidth;
-        const anchorDeltaY = (newAnchorY - oldAnchorY) * layerHeight;
-        
-        // レイヤーの回転を考慮して位置を調整
-        const layerRad = layer.rotation * Math.PI / 180;
-        const layerCos = Math.cos(layerRad);
-        const layerSin = Math.sin(layerRad);
-        
-        const worldDeltaX = (anchorDeltaX * layerCos - anchorDeltaY * layerSin) * layer.scale;
-        const worldDeltaY = (anchorDeltaX * layerSin + anchorDeltaY * layerCos) * layer.scale;
-        
         // アンカーポイントを更新
         layer.anchorX = newAnchorX;
         layer.anchorY = newAnchorY;
-        
-        // 位置を補正（見た目の位置が変わらないように）
-        layer.x += worldDeltaX;
-        layer.y += worldDeltaY;
         
         // モードを解除
         anchorPointPickMode = false;
@@ -1859,37 +1347,18 @@ function resetAnchorPoint() {
     const layer = layers.find(l => l.id === selectedLayerIds[0]);
     if (!layer) return;
     
-    // パペットレイヤーの場合は画像サイズを使用
-    const layerWidth = layer.type === 'puppet' ? layer.img.width : layer.width;
-    const layerHeight = layer.type === 'puppet' ? layer.img.height : layer.height;
-    
-    // 古いアンカーポイントを保存
-    const oldAnchorX = layer.anchorX;
-    const oldAnchorY = layer.anchorY;
+    // フォルダの場合はオフセットをリセット
+    if (layer.type === 'folder') {
+        layer.anchorOffsetX = 0;
+        layer.anchorOffsetY = 0;
+        updatePropertiesPanel();
+        render();
+        return;
+    }
     
     // アンカーポイントを中央に
-    const newAnchorX = 0.5;
-    const newAnchorY = 0.5;
-    
-    // アンカーポイントの変化量を計算
-    const anchorDeltaX = (newAnchorX - oldAnchorX) * layerWidth;
-    const anchorDeltaY = (newAnchorY - oldAnchorY) * layerHeight;
-    
-    // レイヤーの回転を考慮して位置を調整
-    const layerRad = layer.rotation * Math.PI / 180;
-    const layerCos = Math.cos(layerRad);
-    const layerSin = Math.sin(layerRad);
-    
-    const worldDeltaX = (anchorDeltaX * layerCos - anchorDeltaY * layerSin) * layer.scale;
-    const worldDeltaY = (anchorDeltaX * layerSin + anchorDeltaY * layerCos) * layer.scale;
-    
-    // アンカーポイントを更新
-    layer.anchorX = newAnchorX;
-    layer.anchorY = newAnchorY;
-    
-    // 位置を補正（見た目の位置が変わらないように）
-    layer.x += worldDeltaX;
-    layer.y += worldDeltaY;
+    layer.anchorX = 0.5;
+    layer.anchorY = 0.5;
     
     updatePropertiesPanel();
     render();
@@ -1900,35 +1369,11 @@ function setAnchorPoint(axis, value) {
     const layer = layers.find(l => l.id === selectedLayerIds[0]);
     if (!layer) return;
     
-    // パペットレイヤーの場合は画像サイズを使用
-    const layerWidth = layer.type === 'puppet' ? layer.img.width : layer.width;
-    const layerHeight = layer.type === 'puppet' ? layer.img.height : layer.height;
-    
-    // 古いアンカーポイントを保存
-    const oldAnchorX = layer.anchorX;
-    const oldAnchorY = layer.anchorY;
-    
     if (axis === 'x') {
         layer.anchorX = value;
     } else if (axis === 'y') {
         layer.anchorY = value;
     }
-    
-    // アンカーポイントの変化量を計算
-    const anchorDeltaX = (layer.anchorX - oldAnchorX) * layerWidth;
-    const anchorDeltaY = (layer.anchorY - oldAnchorY) * layerHeight;
-    
-    // レイヤーの回転を考慮して位置を調整
-    const layerRad = layer.rotation * Math.PI / 180;
-    const layerCos = Math.cos(layerRad);
-    const layerSin = Math.sin(layerRad);
-    
-    const worldDeltaX = (anchorDeltaX * layerCos - anchorDeltaY * layerSin) * layer.scale;
-    const worldDeltaY = (anchorDeltaX * layerSin + anchorDeltaY * layerCos) * layer.scale;
-    
-    // 位置を補正（見た目の位置が変わらないように）
-    layer.x += worldDeltaX;
-    layer.y += worldDeltaY;
     
     render();
 }
@@ -1938,35 +1383,11 @@ function setAnchorPointLive(axis, value) {
     const layer = layers.find(l => l.id === selectedLayerIds[0]);
     if (!layer) return;
     
-    // パペットレイヤーの場合は画像サイズを使用
-    const layerWidth = layer.type === 'puppet' ? layer.img.width : layer.width;
-    const layerHeight = layer.type === 'puppet' ? layer.img.height : layer.height;
-    
-    // 古いアンカーポイントを保存
-    const oldAnchorX = layer.anchorX;
-    const oldAnchorY = layer.anchorY;
-    
     if (axis === 'x') {
         layer.anchorX = value;
     } else if (axis === 'y') {
         layer.anchorY = value;
     }
-    
-    // アンカーポイントの変化量を計算
-    const anchorDeltaX = (layer.anchorX - oldAnchorX) * layerWidth;
-    const anchorDeltaY = (layer.anchorY - oldAnchorY) * layerHeight;
-    
-    // レイヤーの回転を考慮して位置を調整
-    const layerRad = layer.rotation * Math.PI / 180;
-    const layerCos = Math.cos(layerRad);
-    const layerSin = Math.sin(layerRad);
-    
-    const worldDeltaX = (anchorDeltaX * layerCos - anchorDeltaY * layerSin) * layer.scale;
-    const worldDeltaY = (anchorDeltaX * layerSin + anchorDeltaY * layerCos) * layer.scale;
-    
-    // 位置を補正（見た目の位置が変わらないように）
-    layer.x += worldDeltaX;
-    layer.y += worldDeltaY;
     
     render();
 }

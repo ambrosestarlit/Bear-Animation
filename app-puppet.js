@@ -5,6 +5,8 @@
  * v1.10.1:
  * - ハンドル追加時にレイヤー位置をキーフレームに記録
  * - シークバー移動時のアンカー位置リセット問題を修正
+ * - フォルダ親子関係対応
+ * - 子のローカル座標を親の回転・スケールで正しく変換
  * 
  * 構造：
  * - 軸アンカー：変形の基準点（既存のanchorX, anchorY）
@@ -458,25 +460,42 @@ function calculateMeshDeformation(localX, localY, layer, currentFrame) {
 
 // ===== パペットレイヤー描画 =====
 function drawPuppetLayer(layer, time) {
-    // drawImageLayerが未定義の場合のフォールバック
+    // 親変形を取得
+    const parentTransform = getParentTransform(layer.parentLayerId);
+    
+    // ★ 子のローカル座標を親の回転・スケールで変換 ★
+    const parentRad = parentTransform.rotation * Math.PI / 180;
+    const parentCos = Math.cos(parentRad);
+    const parentSin = Math.sin(parentRad);
+    const transformedLayerX = layer.x * parentTransform.scale * parentCos - layer.y * parentTransform.scale * parentSin;
+    const transformedLayerY = layer.x * parentTransform.scale * parentSin + layer.y * parentTransform.scale * parentCos;
+    
+    const finalX = parentTransform.x + transformedLayerX;
+    const finalY = parentTransform.y + transformedLayerY;
+    const finalRotation = layer.rotation + parentTransform.rotation;
+    const finalScale = layer.scale * parentTransform.scale;
+    
+    // drawImageLayerが未定義の場合のフォールバック（親変形を考慮）
     const fallbackDrawImage = (l) => {
         if (!l.img) return;
         ctx.save();
         ctx.globalAlpha = l.opacity;
         ctx.globalCompositeOperation = l.blendMode || 'source-over';
-        ctx.translate(l.x, l.y);
-        ctx.rotate(l.rotation * Math.PI / 180);
-        ctx.scale(l.scale, l.scale);
+        
+        // ★ 親変形を適用した座標を使用 ★
+        ctx.translate(finalX, finalY);
+        ctx.rotate(finalRotation * Math.PI / 180);
+        ctx.scale(finalScale, finalScale);
+        
         const anchorOffsetX = l.anchorX * l.img.width;
         const anchorOffsetY = l.anchorY * l.img.height;
         ctx.drawImage(l.img, -anchorOffsetX, -anchorOffsetY);
         ctx.restore();
     };
     
-    const drawImage = typeof drawImageLayer === 'function' ? drawImageLayer : fallbackDrawImage;
-    
+    // ハンドルなし、またはWebGL未初期化の場合
     if (!puppetWebGL || !puppetProgram) {
-        drawImage(layer, time);
+        fallbackDrawImage(layer);
         return;
     }
     
@@ -485,7 +504,7 @@ function drawPuppetLayer(layer, time) {
     
     // ハンドルが設定されていない場合は通常描画
     if (!layer.handleAnchors || layer.handleAnchors.length === 0) {
-        drawImage(layer, time);
+        fallbackDrawImage(layer);
         return;
     }
     
@@ -503,12 +522,6 @@ function drawPuppetLayer(layer, time) {
     glCanvas.width = canvasWidth;
     glCanvas.height = canvasHeight;
     gl.viewport(0, 0, canvasWidth, canvasHeight);
-    
-    const parentTransform = getParentTransform(layer.parentLayerId);
-    const finalX = layer.x + parentTransform.x;
-    const finalY = layer.y + parentTransform.y;
-    const finalRotation = layer.rotation + parentTransform.rotation;
-    const finalScale = layer.scale * parentTransform.scale;
     
     const currentFrame = Math.floor(currentTime * projectFPS);
     
@@ -644,8 +657,16 @@ function addPuppetHandle(canvasX, canvasY) {
     ensureLayerKeyframeAtCurrentFrame(layer, currentFrame);
     
     const parentTransform = getParentTransform(layer.parentLayerId);
-    const finalX = layer.x + parentTransform.x;
-    const finalY = layer.y + parentTransform.y;
+    
+    // ★ 子のローカル座標を親の回転・スケールで変換 ★
+    const parentRad = parentTransform.rotation * Math.PI / 180;
+    const parentCos = Math.cos(parentRad);
+    const parentSin = Math.sin(parentRad);
+    const transformedLayerX = layer.x * parentTransform.scale * parentCos - layer.y * parentTransform.scale * parentSin;
+    const transformedLayerY = layer.x * parentTransform.scale * parentSin + layer.y * parentTransform.scale * parentCos;
+    
+    const finalX = parentTransform.x + transformedLayerX;
+    const finalY = parentTransform.y + transformedLayerY;
     const finalRotation = layer.rotation + parentTransform.rotation;
     const finalScale = layer.scale * parentTransform.scale;
     
@@ -759,8 +780,16 @@ function addFixedPin(arg1, arg2) {
     }
     
     const parentTransform = getParentTransform(layer.parentLayerId);
-    const finalX = layer.x + parentTransform.x;
-    const finalY = layer.y + parentTransform.y;
+    
+    // ★ 子のローカル座標を親の回転・スケールで変換 ★
+    const parentRad = parentTransform.rotation * Math.PI / 180;
+    const parentCos = Math.cos(parentRad);
+    const parentSin = Math.sin(parentRad);
+    const transformedLayerX = layer.x * parentTransform.scale * parentCos - layer.y * parentTransform.scale * parentSin;
+    const transformedLayerY = layer.x * parentTransform.scale * parentSin + layer.y * parentTransform.scale * parentCos;
+    
+    const finalX = parentTransform.x + transformedLayerX;
+    const finalY = parentTransform.y + transformedLayerY;
     const finalRotation = layer.rotation + parentTransform.rotation;
     const finalScale = layer.scale * parentTransform.scale;
     
@@ -845,8 +874,16 @@ function drawPuppetAnchorElements() {
     
     const currentFrame = Math.floor(currentTime * projectFPS);
     const parentTransform = getParentTransform(layer.parentLayerId);
-    const finalX = layer.x + parentTransform.x;
-    const finalY = layer.y + parentTransform.y;
+    
+    // ★ 子のローカル座標を親の回転・スケールで変換 ★
+    const parentRad = parentTransform.rotation * Math.PI / 180;
+    const parentCos = Math.cos(parentRad);
+    const parentSin = Math.sin(parentRad);
+    const transformedLayerX = layer.x * parentTransform.scale * parentCos - layer.y * parentTransform.scale * parentSin;
+    const transformedLayerY = layer.x * parentTransform.scale * parentSin + layer.y * parentTransform.scale * parentCos;
+    
+    const finalX = parentTransform.x + transformedLayerX;
+    const finalY = parentTransform.y + transformedLayerY;
     const finalRotation = layer.rotation + parentTransform.rotation;
     const finalScale = layer.scale * parentTransform.scale;
     
@@ -1062,8 +1099,16 @@ function handlePuppetMouseMove(e) {
     const canvasY = (e.clientY - canvasRect.top) / canvasRect.height * canvas.height;
     
     const parentTransform = getParentTransform(layer.parentLayerId);
-    const finalX = layer.x + parentTransform.x;
-    const finalY = layer.y + parentTransform.y;
+    
+    // ★ 子のローカル座標を親の回転・スケールで変換 ★
+    const parentRad = parentTransform.rotation * Math.PI / 180;
+    const parentCos = Math.cos(parentRad);
+    const parentSin = Math.sin(parentRad);
+    const transformedLayerX = layer.x * parentTransform.scale * parentCos - layer.y * parentTransform.scale * parentSin;
+    const transformedLayerY = layer.x * parentTransform.scale * parentSin + layer.y * parentTransform.scale * parentCos;
+    
+    const finalX = parentTransform.x + transformedLayerX;
+    const finalY = parentTransform.y + transformedLayerY;
     const finalRotation = layer.rotation + parentTransform.rotation;
     const finalScale = layer.scale * parentTransform.scale;
     
@@ -1353,6 +1398,7 @@ function migrateOldPuppetData(layer) {
 }
 
 // ===== 親レイヤーの累積変換を取得 =====
+// 親の回転・スケールを子の位置に正しく反映する
 function getParentTransform(parentLayerId) {
     if (!parentLayerId) {
         return { x: 0, y: 0, rotation: 0, scale: 1 };
@@ -1363,13 +1409,25 @@ function getParentTransform(parentLayerId) {
         return { x: 0, y: 0, rotation: 0, scale: 1 };
     }
     
-    const parentParentTransform = getParentTransform(parent.parentLayerId);
+    // まず親の親の変形を取得
+    const grandParentTransform = getParentTransform(parent.parentLayerId);
+    
+    // 親の位置を、親の親の回転・スケールで変換
+    const grandRad = grandParentTransform.rotation * Math.PI / 180;
+    const grandCos = Math.cos(grandRad);
+    const grandSin = Math.sin(grandRad);
+    
+    // 親の位置を親の親の変形で変換
+    const transformedParentX = parent.x * grandParentTransform.scale * grandCos 
+                              - parent.y * grandParentTransform.scale * grandSin;
+    const transformedParentY = parent.x * grandParentTransform.scale * grandSin 
+                              + parent.y * grandParentTransform.scale * grandCos;
     
     return {
-        x: parent.x + parentParentTransform.x,
-        y: parent.y + parentParentTransform.y,
-        rotation: parent.rotation + parentParentTransform.rotation,
-        scale: parent.scale * parentParentTransform.scale
+        x: grandParentTransform.x + transformedParentX,
+        y: grandParentTransform.y + transformedParentY,
+        rotation: parent.rotation + grandParentTransform.rotation,
+        scale: parent.scale * grandParentTransform.scale
     };
 }
 
@@ -1380,19 +1438,26 @@ function getPuppetFollowPosition(followConfig) {
     const puppetLayer = layers.find(l => l.id === followConfig.layerId);
     if (!puppetLayer || puppetLayer.type !== 'puppet') return { x: 0, y: 0 };
     
+    const parentTransform = getParentTransform(puppetLayer.parentLayerId);
+    
+    // ★ 子のローカル座標を親の回転・スケールで変換 ★
+    const parentRad = parentTransform.rotation * Math.PI / 180;
+    const parentCos = Math.cos(parentRad);
+    const parentSin = Math.sin(parentRad);
+    const transformedLayerX = puppetLayer.x * parentTransform.scale * parentCos - puppetLayer.y * parentTransform.scale * parentSin;
+    const transformedLayerY = puppetLayer.x * parentTransform.scale * parentSin + puppetLayer.y * parentTransform.scale * parentCos;
+    
     // handleAnchorsが存在しない場合は軸アンカーの位置を返す
     if (!puppetLayer.handleAnchors || puppetLayer.handleAnchors.length === 0) {
-        const parentTransform = getParentTransform(puppetLayer.parentLayerId);
         return {
-            x: puppetLayer.x + parentTransform.x,
-            y: puppetLayer.y + parentTransform.y
+            x: parentTransform.x + transformedLayerX,
+            y: parentTransform.y + transformedLayerY
         };
     }
     
     const currentFrame = Math.floor(currentTime * projectFPS);
-    const parentTransform = getParentTransform(puppetLayer.parentLayerId);
-    const finalX = puppetLayer.x + parentTransform.x;
-    const finalY = puppetLayer.y + parentTransform.y;
+    const finalX = parentTransform.x + transformedLayerX;
+    const finalY = parentTransform.y + transformedLayerY;
     const finalRotation = puppetLayer.rotation + parentTransform.rotation;
     const finalScale = puppetLayer.scale * parentTransform.scale;
     
@@ -1413,4 +1478,4 @@ function getPuppetFollowPosition(followConfig) {
     return { x: worldX, y: worldY };
 }
 
-console.log('⭐ Starlit Puppet Editor v1.10.1 - マルチハンドル親子関係システム（アンカー位置修正）');
+console.log('⭐ Starlit Puppet Editor v1.10.1 - フォルダ親子関係・座標変換修正');

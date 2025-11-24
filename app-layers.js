@@ -1,6 +1,7 @@
 /**
- * ⭐ Starlit Puppet Editor v1.2.0
- * レイヤーリスト・フォルダ機能（口パク・まばたきレイヤー対応）
+ * ⭐ Starlit Puppet Editor v1.10.1
+ * レイヤーリスト・フォルダ機能（フォルダ親子関係対応）
+ * - フォルダ同士の親子関係表示対応
  * - レイヤー順序修正: 上が前面に表示
  * - 親子関係の表示問題を修正
  * - 口パクレイヤー追加
@@ -109,9 +110,13 @@ function renderLayerItem(layer, depth) {
         // 風揺れアイコン
         const windIcon = layer.windSwayEnabled ? '💨' : '';
         
+        // 親レイヤーがある場合のインジケータ
+        const hasParent = layer.parentLayerId != null;
+        const parentIndicator = hasParent ? '🔗' : '';
+        
         item.innerHTML = `
             <span class="folder-toggle" onclick="toggleFolder(${layer.id}, event)">${expanded ? '▼' : '▶'}</span>
-            <span class="layer-name">${windIcon}📁 ${layer.name}</span>
+            <span class="layer-name">${windIcon}${parentIndicator}📁 ${layer.name}</span>
             <span class="layer-controls">
                 <button onclick="deleteLayer(${layer.id}, event)">🗑️</button>
             </span>

@@ -1,6 +1,8 @@
 /**
- * ⭐ Starlit Puppet Editor v1.2.0
- * コア機能 - レイヤー管理・描画（口パク・まばたき対応）
+ * ⭐ Starlit Puppet Editor v1.10.1
+ * コア機能 - レイヤー管理・描画
+ * - フォルダ間親子関係の描画対応
+ * - パペット・バウンスレイヤーの親変形対応
  */
 
 // ===== 画像読み込み =====
@@ -152,8 +154,16 @@ function render() {
             // 軸アンカー（赤い十字マーク）を描画
             ctx.save();
             const parentTransform = getParentTransform(layer.parentLayerId);
-            const finalX = layer.x + parentTransform.x;
-            const finalY = layer.y + parentTransform.y;
+            
+            // ★ 子のローカル座標を親の回転・スケールで変換 ★
+            const parentRad = parentTransform.rotation * Math.PI / 180;
+            const parentCos = Math.cos(parentRad);
+            const parentSin = Math.sin(parentRad);
+            const transformedLayerX = layer.x * parentTransform.scale * parentCos - layer.y * parentTransform.scale * parentSin;
+            const transformedLayerY = layer.x * parentTransform.scale * parentSin + layer.y * parentTransform.scale * parentCos;
+            
+            const finalX = parentTransform.x + transformedLayerX;
+            const finalY = parentTransform.y + transformedLayerY;
             const finalRotation = layer.rotation + parentTransform.rotation;
             const finalScale = layer.scale * parentTransform.scale;
             
@@ -536,21 +546,35 @@ function applyParentTransform(layer) {
     const parent = layers.find(l => l.id === layer.parentLayerId);
     if (!parent) return;
     
-    // 親の変形を再帰的に適用
+    // 親の変形を再帰的に適用（親がフォルダでも他のレイヤーでも処理）
     applyParentTransform(parent);
     
     // 親の位置に移動
     ctx.translate(parent.x, parent.y);
     
-    // フォルダの場合
+    // フォルダの場合（widthとheightがない）
     if (parent.type === 'folder') {
-        // フォルダは回転とスケールのみ適用（widthとheightがないため）
+        // フォルダは位置を中心として回転とスケールを適用
         ctx.rotate(parent.rotation * Math.PI / 180);
         ctx.scale(parent.scale, parent.scale);
         return;
     }
     
-    // 画像レイヤー、口パク、まばたきレイヤーの場合
+    // パペットレイヤーの場合
+    if (parent.type === 'puppet') {
+        if (parent.img) {
+            const parentWidth = parent.img.width;
+            const parentHeight = parent.img.height;
+            const parentAnchorOffsetX = parent.anchorX * parentWidth;
+            const parentAnchorOffsetY = parent.anchorY * parentHeight;
+            ctx.translate(parentAnchorOffsetX - parentWidth / 2, parentAnchorOffsetY - parentHeight / 2);
+        }
+        ctx.rotate(parent.rotation * Math.PI / 180);
+        ctx.scale(parent.scale, parent.scale);
+        return;
+    }
+    
+    // 画像レイヤー、口パク、まばたき、バウンスレイヤーの場合
     let parentWidth, parentHeight;
     
     if (parent.type === 'lipsync' || parent.type === 'blink') {
@@ -558,6 +582,13 @@ function applyParentTransform(layer) {
         if (parent.sequenceImages && parent.sequenceImages.length > 0) {
             parentWidth = parent.sequenceImages[0].width;
             parentHeight = parent.sequenceImages[0].height;
+        } else {
+            return;
+        }
+    } else if (parent.type === 'bounce') {
+        if (parent.img) {
+            parentWidth = parent.img.width;
+            parentHeight = parent.img.height;
         } else {
             return;
         }

@@ -1,7 +1,9 @@
 /**
- * ⭐ Starlit Puppet Editor v1.8.7
- * プロパティパネル - アンカー設定モードとピンモードの競合を修正
- * - アンカー設定モードとピンモードが互いに無効化するように改善
+ * ⭐ Starlit Puppet Editor v1.10.1
+ * プロパティパネル - フォルダ親子関係対応
+ * - フォルダ同士で親子関係を設定可能に
+ * - 循環参照防止機能
+ * - アンカー設定モードとピンモードの競合を修正
  * - 風揺れ完全UI実装 + 口パク・まばたき対応 + 揺れモーション分割数調整 + 揺れピン制御
  */
 
@@ -50,6 +52,14 @@ function updatePropertiesPanel() {
     
     // フォルダの場合
     if (layer.type === 'folder') {
+        // フォルダ同士の親子関係用 - 自分自身とその子孫を除外
+        const availableParents = layers.filter(l => {
+            if (l.id === layer.id) return false; // 自分自身は除外
+            // 子孫フォルダも除外（循環参照防止）
+            if (isDescendantOf(l.id, layer.id)) return false;
+            return true;
+        });
+        
         propertiesPanel.innerHTML = `
             <h3>📁 ${layer.name}</h3>
             <p style="color: var(--biscuit-light); margin-top: 16px; font-size: 11px;">
@@ -57,6 +67,23 @@ function updatePropertiesPanel() {
                 フォルダを動かすと親がないレイヤーも一緒に動きます<br>
                 ✨ 既存の親子関係は維持されます
             </p>
+            
+            <div class="property-group">
+                <h4>🔗 親子関係</h4>
+                <label style="font-size: 11px; display: block; margin-bottom: 4px;">親レイヤー:</label>
+                <select id="prop-parent" onchange="updateFolderParent(this.value)" 
+                    style="width: 100%; padding: 6px; background: var(--biscuit-dark); color: var(--chocolate-dark); border: 1px solid var(--border-color); border-radius: 4px;">
+                    <option value="">なし</option>
+                    ${availableParents.map(l => {
+                        const icon = l.type === 'folder' ? '📁' : (l.type === 'puppet' ? '🎭' : '🖼️');
+                        return `<option value="${l.id}" ${l.id === layer.parentLayerId ? 'selected' : ''}>${icon} ${l.name}</option>`;
+                    }).join('')}
+                </select>
+                <div style="background: rgba(210, 105, 30, 0.2); padding: 8px; margin-top: 8px; border-radius: 4px; font-size: 10px; line-height: 1.4; color: var(--biscuit-light);">
+                    💡 フォルダを別のフォルダの子に設定できます<br>
+                    📁 親フォルダを動かすと、このフォルダも一緒に動きます
+                </div>
+            </div>
             
             <div class="property-group">
                 <h4>📍 トランスフォーム</h4>
@@ -2574,6 +2601,69 @@ function updatePuppetFollow(value) {
         };
     }
     
+    updatePropertiesPanel();
+    render();
+}
+
+// ===== フォルダ親子関係用関数 =====
+
+// レイヤーが別のレイヤーの子孫かどうかを確認（循環参照防止）
+function isDescendantOf(layerId, potentialAncestorId) {
+    const layer = layers.find(l => l.id === layerId);
+    if (!layer) return false;
+    
+    // 直接の子を確認
+    const children = layers.filter(l => l.parentLayerId === potentialAncestorId);
+    for (const child of children) {
+        if (child.id === layerId) return true;
+        // 再帰的に子孫を確認
+        if (isDescendantOf(layerId, child.id)) return true;
+    }
+    
+    return false;
+}
+
+// フォルダの親レイヤーを更新（位置補正付き）
+function updateFolderParent(value) {
+    const layer = layers.find(l => l.id === selectedLayerIds[0]);
+    if (!layer || layer.type !== 'folder') return;
+    
+    const newParentId = value ? parseInt(value) : null;
+    const oldParentId = layer.parentLayerId;
+    
+    // 変更がない場合は何もしない
+    if (newParentId === oldParentId) return;
+    
+    // 循環参照チェック
+    if (newParentId) {
+        // 新しい親が自分の子孫であればエラー
+        if (isDescendantOf(newParentId, layer.id)) {
+            alert('循環参照になるため、この親子関係は設定できません');
+            return;
+        }
+    }
+    
+    // ★ 位置補正: 見た目の位置が変わらないように調整 ★
+    // 現在のワールド座標を計算
+    const oldTransform = getParentTransform(oldParentId);
+    const oldWorldX = layer.x + oldTransform.x;
+    const oldWorldY = layer.y + oldTransform.y;
+    
+    // 新しい親のワールド座標を取得
+    const newTransform = getParentTransform(newParentId);
+    
+    // 新しいローカル座標を計算（ワールド座標 - 新しい親の位置）
+    layer.x = oldWorldX - newTransform.x;
+    layer.y = oldWorldY - newTransform.y;
+    
+    // 親を更新
+    layer.parentLayerId = newParentId;
+    
+    console.log('📁 フォルダ親子関係更新:', layer.name, 
+        '→ 親:', newParentId ? layers.find(l => l.id === newParentId)?.name : 'なし',
+        '| 位置補正: x=', layer.x.toFixed(2), 'y=', layer.y.toFixed(2));
+    
+    updateLayerList();
     updatePropertiesPanel();
     render();
 }
